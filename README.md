@@ -2,6 +2,8 @@
 
 Tools for converting a 256-bit hash into human-readable and audible representations. A merkle root is a deterministic fingerprint of all transactions in a block. These tools transform a BTC block fingerprint into words (BIP-39) and rhythm (via MIDI). 
 
+### Objective: to proove a point-in-time occurred where information was revealed that could not have been known in advance. Deterministic words and note durations are derived from this revelation. The proof-of-live work will incorporate these words and notes as deemed most artful to the piece. 
+
 ## merkle-to-words
 
 Converts a 256-bit merkle root into a 21-word phrase using the BIP-39 English wordlist.
