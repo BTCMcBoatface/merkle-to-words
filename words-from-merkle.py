@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-merkle_to_words.py
-------------------
+words-from-merkle.py
+--------------------
 Converts a Bitcoin merkle root (256-bit hex value) into a 21-word phrase
 using the official BIP-39 English wordlist.
 
@@ -25,13 +25,21 @@ NOTE: The output is NOT a valid BIP-39 wallet seed phrase. It is a
 """
 
 import sys
+import json
 import urllib.request
+from typing import Optional, Tuple, List
 
 
 # ── Constants ────────────────────────────────────────────────────────────────
 
 # The official BIP-39 English wordlist, hosted in the Bitcoin BIPs repository
 WORDLIST_URL = "https://raw.githubusercontent.com/bitcoin/bips/master/bip-0039/english.txt"
+
+# Blockstream API for fetching the latest Bitcoin block
+LATEST_BLOCK_API = "https://blockstream.info/api/blocks/tip"
+
+# Fallback merkle root if API is unreachable
+DEFAULT_MERKLE_ROOT = "2e0f4eb72a525d443b731dce006d728a2f3575768a9e475fc1b4c66016475600"
 
 # A merkle root is always 64 hex characters (256 bits)
 MERKLE_ROOT_HEX_LENGTH = 64
@@ -47,6 +55,26 @@ BITS_TO_USE = NUM_WORDS * BITS_PER_WORD   # 21 × 11 = 231 bits
 
 # Bits we discard from the end of the 256-bit input
 BITS_DISCARDED = 256 - BITS_TO_USE        # 256 - 231 = 25 bits discarded
+
+
+# ── Block fetching ───────────────────────────────────────────────────────────
+
+def fetch_latest_block() -> Tuple[Optional[str], Optional[str], Optional[int]]:
+    """
+    Fetch the latest Bitcoin block from the Blockstream API.
+    Returns (merkle_root, block_hash, block_height) or (None, None, None) on failure.
+    """
+    try:
+        print(f"Fetching latest BTC block from:\n  {LATEST_BLOCK_API}\n")
+        req = urllib.request.Request(LATEST_BLOCK_API)
+        req.add_header("User-Agent", "merkle-to-words/1.0")
+        with urllib.request.urlopen(req, timeout=10) as response:
+            blocks = json.loads(response.read().decode("utf-8"))
+            if blocks and "merkle_root" in blocks[0] and "id" in blocks[0] and "height" in blocks[0]:
+                return blocks[0]["merkle_root"], blocks[0]["id"], blocks[0]["height"]
+    except Exception as e:
+        print(f"Could not fetch latest block: {e}")
+    return None, None, None
 
 
 # ── Wordlist loading ─────────────────────────────────────────────────────────
@@ -163,15 +191,24 @@ def merkle_to_words(merkle_root_hex: str, wordlist: list[str]) -> list[str]:
 
 # ── Output / display ─────────────────────────────────────────────────────────
 
-def display_results(merkle_root_hex: str, words: list[str], indices: list[int], all_bits: str):
+def display_results(
+    merkle_root_hex: str,
+    block_hash: str,
+    block_height: int,
+    words: list[str],
+    indices: list[int],
+    all_bits: str,
+):
     """
     Print a detailed breakdown of the conversion for transparency.
-    Shows the bit string, each 11-bit chunk, its integer value, and the word.
+    Shows the block info, bit string, each 11-bit chunk, its integer value, and the word.
     """
-    print("=" * 60)
+    print("=" * 70)
     print("MERKLE ROOT → 21-WORD PHRASE (BIP-39 encoding)")
-    print("=" * 60)
-    print(f"\nInput merkle root:\n  {merkle_root_hex}\n")
+    print("=" * 70)
+    print(f"\nInput merkle root:\n  {merkle_root_hex}")
+    print(f"Block hash:\n  {block_hash}")
+    print(f"Block height: {block_height}\n")
 
     print(f"Full 256-bit binary representation:")
     # Print in groups of 11 bits for easy visual chunking, then the remainder
@@ -197,15 +234,23 @@ def display_results(merkle_root_hex: str, words: list[str], indices: list[int], 
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 def main():
-    # Use the merkle root from a March 28 block example, or accept one as a command-line arg
-    default_merkle_root = "2e0f4eb72a525d443b731dce006d728a2f3575768a9e475fc1b4c66016475600"
+    block_hash = "N/A"
+    block_height = "N/A"
 
     if len(sys.argv) > 1:
-        merkle_root_hex = sys.argv[1]
+        merkle_root_hex = sys.argv[1].strip().lower()
+        block_hash = "N/A"
+        block_height = "N/A"
         print(f"Using merkle root from command line argument.")
     else:
-        merkle_root_hex = default_merkle_root
-        print(f"No argument provided. Using default example merkle root.")
+        merkle_root_hex, block_hash, block_height = fetch_latest_block()
+        if merkle_root_hex is None:
+            print(f"Could not fetch latest block. Falling back to default merkle root.")
+            merkle_root_hex = DEFAULT_MERKLE_ROOT
+            block_hash = "N/A"
+            block_height = "N/A"
+        else:
+            print(f"Using latest BTC block merkle root.")
 
     # Load the official BIP-39 wordlist from GitHub
     wordlist = load_wordlist(WORDLIST_URL)
@@ -215,7 +260,7 @@ def main():
     words, indices, all_bits = merkle_to_words(merkle_root_hex, wordlist)
 
     # Display the detailed breakdown
-    display_results(merkle_root_hex, words, indices, all_bits)
+    display_results(merkle_root_hex, block_hash, block_height, words, indices, all_bits)
 
 
 if __name__ == "__main__":

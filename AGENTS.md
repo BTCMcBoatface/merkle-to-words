@@ -4,11 +4,11 @@
 Tools for converting a Bitcoin merkle root (256-bit hash) into human-readable words and rhythmic MIDI patterns.
 
 ## Files
-- `merkle_to_words.py` — Converts merkle root to 21-word BIP-39 phrase
-- `merkle_to_midi.py` — Converts merkle root to rhythmic MIDI via merkle tree descent
+- `words-from-merkle.py` — Converts merkle root to 21-word BIP-39 phrase
+- `midi-from-merkle.py` — Converts merkle root to rhythmic MIDI via merkle tree descent
 - `README.md` — Full documentation
 
-## merkle_to_midi.py — Key Design Decisions
+## midi-from-merkle.py — Key Design Decisions
 
 ### Merkle Tree Descent
 - Root = merkle root bytes (32 bytes)
@@ -46,8 +46,8 @@ Tools for converting a Bitcoin merkle root (256-bit hash) into human-readable wo
 
 ## Commands
 ```
-python3 merkle_to_words.py [hex]     # generate 21-word phrase
-python3 merkle_to_midi.py [hex]      # generate rhythmic MIDI
+python3 words-from-merkle.py [hex]     # generate 21-word phrase
+python3 midi-from-merkle.py [hex]      # generate rhythmic MIDI
 ```
 Requires: `pip install mido`
 

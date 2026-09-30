@@ -1,8 +1,6 @@
 # merkle-to-words
 
-Tools for converting a 256-bit hash into human-readable and audible representations. A merkle root is a deterministic fingerprint of all transactions in a block. These tools transform a BTC block fingerprint into words (BIP-39) and rhythm (via MIDI). 
-
-### Objective: to proove a point-in-time occurred where information was revealed that could not have been known in advance. Deterministic words and note durations are derived from this revelation. The proof-of-live work will incorporate these words and notes as deemed most artful to the piece. 
+Tools for converting a Bitcoin merkle root (or any 256-bit hash) into human-readable and audible representations. A merkle root is a deterministic fingerprint of all transactions in a block — these tools transform that fingerprint into words and rhythm.
 
 ## merkle-to-words
 
@@ -10,7 +8,13 @@ Converts a 256-bit merkle root into a 21-word phrase using the BIP-39 English wo
 
 The merkle root is treated as a 256-bit binary value. The first 231 bits are split into 21 chunks of 11 bits each. Each 11-bit value (0–2047) serves as a direct index into the 2048-word BIP-39 wordlist. The remaining 25 bits are discarded.
 
-The output is a deterministic encoding of the merkle root into readable words selected from BIP-39. 
+The output is a deterministic encoding of the merkle root into readable words. This is **not** a valid BIP-39 wallet seed phrase — no checksum is appended.
+
+**Usage:**
+```
+python3 words-from-merkle.py                          # uses a default example merkle root
+python3 words-from-merkle.py <64-char-hex-string>     # uses your own merkle root
+```
 
 ## merkle-to-midi
 
@@ -24,7 +28,7 @@ The merkle root is used as the root of a binary tree. Leaf hashes are derived vi
 - **Right child:** `SHA-256(node_bytes || 0x01)`
 - Recurse to depth D (default 5), yielding 2^5 = **32 leaf hashes** in left-to-right depth-first order
 
-Every leaf is a full 256-bit hash with uniform entropy distribution, the tree structure is deterministic and reproducible, and the entire root participates in every leaf through proper hashing.
+This approach is more elegant than simple bit-slicing: every leaf is a full 256-bit hash with uniform entropy distribution, the tree structure is deterministic and reproducible, and the entire root participates in every leaf through proper cryptographic hashing.
 
 ### Loop Length
 
@@ -63,8 +67,8 @@ If no merkle root is provided, the script fetches the latest Bitcoin block from 
 
 **Usage:**
 ```
-python3 merkle_to_midi.py                          # fetches latest BTC block merkle root
-python3 merkle_to_midi.py <64-char-hex-string>     # uses your own merkle root
+python3 midi-from-merkle.py                          # fetches latest BTC block merkle root
+python3 midi-from-merkle.py <64-char-hex-string>     # uses your own merkle root
 ```
 
 Requires the `mido` library: `pip install mido`

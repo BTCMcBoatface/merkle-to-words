@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-merkle_to_midi.py
------------------
+midi-from-merkle.py
+-------------------
 Converts a Bitcoin merkle root (256-bit hex value) into a rhythmic MIDI pattern
 using merkle tree descent to derive leaf hashes.
 
@@ -49,6 +49,9 @@ except ImportError:
 
 
 # ── Constants ────────────────────────────────────────────────────────────────
+
+# Directory where MIDI files are saved
+MIDI_OUTPUT_DIR = "midi-files"
 
 # A merkle root is always 64 hex characters (256 bits)
 MERKLE_ROOT_HEX_LENGTH = 64
@@ -117,19 +120,18 @@ DURATION_TABLE = [
 
 # ── Block fetching ───────────────────────────────────────────────────────────
 
-def fetch_latest_block() -> Tuple[Optional[str], Optional[str]]:
+def fetch_latest_block() -> Tuple[Optional[str], Optional[str], Optional[int]]:
     """
     Fetch the latest Bitcoin block from the Blockstream API.
 
     The API returns a JSON array of the most recent blocks. We use the first
-    (most recent) block, extracting both its merkle_root and block hash (id).
+    (most recent) block, extracting its merkle_root, block hash (id), and height.
 
     The block hash is displayed for reference only — it is NOT used in the
     rhythm derivation. Only the merkle root drives the MIDI generation.
 
     Returns:
-        (merkle_root, block_hash) as 64-char hex strings,
-        or (None, None) if the API call fails (network error, timeout, etc.)
+        (merkle_root, block_hash, block_height) or (None, None, None) on failure.
     """
     try:
         print(f"Fetching latest BTC block from:\n  {LATEST_BLOCK_API}\n")
@@ -137,11 +139,11 @@ def fetch_latest_block() -> Tuple[Optional[str], Optional[str]]:
         req.add_header("User-Agent", "merkle-to-midi/1.0")
         with urllib.request.urlopen(req, timeout=10) as response:
             blocks = json.loads(response.read().decode("utf-8"))
-            if blocks and "merkle_root" in blocks[0] and "id" in blocks[0]:
-                return blocks[0]["merkle_root"], blocks[0]["id"]
+            if blocks and "merkle_root" in blocks[0] and "id" in blocks[0] and "height" in blocks[0]:
+                return blocks[0]["merkle_root"], blocks[0]["id"], blocks[0]["height"]
     except Exception as e:
         print(f"Could not fetch latest block: {e}")
-    return None, None
+    return None, None, None
 
 
 # ── Merkle tree descent ──────────────────────────────────────────────────────
@@ -475,20 +477,23 @@ def main():
     """
     # ── Step 1: Get merkle root ─────────────────────────────────────────────
     block_hash = "N/A"
+    block_height = None
 
     if len(sys.argv) > 1:
         # User provided a merkle root on the command line
         merkle_root_hex = sys.argv[1].strip().lower()
-        block_hash = "N/A"  # Block hash only available when fetching from API
+        block_hash = "N/A"
+        block_height = None
         print(f"Using merkle root from command line argument.")
     else:
         # Fetch the latest Bitcoin block from the Blockstream API
-        merkle_root_hex, block_hash = fetch_latest_block()
+        merkle_root_hex, block_hash, block_height = fetch_latest_block()
         if merkle_root_hex is None:
             # API failed — fall back to hardcoded default
             print(f"Could not fetch latest block. Falling back to default merkle root.")
             merkle_root_hex = DEFAULT_MERKLE_ROOT
             block_hash = "N/A"
+            block_height = None
         else:
             print(f"Using latest BTC block merkle root.")
 
@@ -504,9 +509,20 @@ def main():
     # Uses the output file itself as a "cache" — if the file exists, the same
     # merkle root was already processed. This avoids redundant work and signals
     # that no new block has been found since the last run.
-    output_name = f"merkle_{merkle_root_hex[:8]}.mid"
-    if Path(output_name).exists():
-        print(f"\nNo new block since last run. MIDI file already exists: {output_name}")
+    # Filename format: {block_height}_merkle_{root_prefix}.mid (or merkle_{root_prefix}.mid if height unknown)
+    if block_height is not None:
+        output_name = f"{block_height}_merkle_{merkle_root_hex[:8]}.mid"
+    else:
+        output_name = f"merkle_{merkle_root_hex[:8]}.mid"
+
+    # Ensure the output directory exists
+    midi_dir = Path(MIDI_OUTPUT_DIR)
+    midi_dir.mkdir(exist_ok=True)
+
+    output_path = midi_dir / output_name
+
+    if output_path.exists():
+        print(f"\nNo new block since last run. MIDI file already exists: {output_path}")
         print(f"Delete the file or use a different merkle root to regenerate.")
         sys.exit(0)
 
@@ -531,7 +547,7 @@ def main():
     )
 
     # ── Step 8: Export MIDI file ────────────────────────────────────────────
-    generate_midi(notes, output_name)
+    generate_midi(notes, str(output_path))
 
 
 if __name__ == "__main__":
