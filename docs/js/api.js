@@ -25,14 +25,27 @@ export async function fetchTip() {
 }
 
 // Two-step for a specific height (old blocks allowed): height → hash → block.
+// NOTE: GET /block-height/:height returns the block hash as PLAIN TEXT
+// (an array of hashes only during chain forks) — do not .json() it.
+// Safari surfaced that parse failure as:
+//   SyntaxError: "The string did not match the expected pattern."
 export async function fetchByHeight(height) {
   const h = parseInt(String(height).trim(), 10);
   if (!Number.isInteger(h) || h < 0 || h > 9999999) {
     throw new Error(`Invalid block height: ${height}`);
   }
-  const hashes = await getJSON(`/block-height/${h}`);
-  if (!hashes || !hashes[0]) throw new Error(`No block at height ${h}`);
-  const block = await getJSON(`/block/${hashes[0]}`);
+  const res = await fetch(`${BASE}/block-height/${h}`);
+  if (!res.ok) throw new Error(`Blockstream API ${res.status} for /block-height/${h}`);
+  const raw = (await res.text()).trim();
+  let hash;
+  if (raw.startsWith("[")) {
+    const arr = JSON.parse(raw); // fork: multiple hashes at this height
+    hash = arr && arr[0];
+  } else {
+    hash = raw;
+  }
+  if (!/^[0-9a-f]{64}$/.test(hash || "")) throw new Error(`No block found at height ${h}`);
+  const block = await getJSON(`/block/${hash}`);
   if (!block || !block.merkle_root) throw new Error(`No merkle_root at height ${h}`);
   return { height: h, merkleRoot: normalizeRootHex(block.merkle_root), blockHash: block.id };
 }
