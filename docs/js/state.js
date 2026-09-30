@@ -10,11 +10,16 @@ const LS_KEY = "m2m-rhyth…n-v1";
 const V = "1";
 const HEX64 = /^[0-9a-f]{64}$/;
 
-export function encode({ blocks, slots, mode }) {
+export function encode({ blocks, slots, mode, transpose, bpm }) {
   const b = blocks.map((k) => `${k.height ?? "-"}~${k.rootHex}`).join(",");
   const s = slots.map((i) => (i == null || i < 0 ? "-" : i)).join(",");
   const m = mode === "master" ? "master" : "ind";
-  return `?v=${V}&b=${b}&s=${s}&m=${m}`;
+  let q = `?v=${V}&b=${b}&s=${s}&m=${m}`;
+  if (Array.isArray(transpose) && transpose.some((x) => x | 0)) {
+    q += `&t=${transpose.map((x) => Math.max(-24, Math.min(24, x | 0))).join(",")}`;
+  }
+  if (bpm && bpm !== 120) q += `&u=${Math.round(bpm)}`;
+  return q;
 }
 
 export function shareURL(view) {
@@ -40,7 +45,20 @@ export function decode(search) {
     const slots = parts.map((p) => (p === "-" ? -1 : parseInt(p, 10)));
     if (slots.some((i) => i >= blocks.length)) return null;
     const mode = q.get("m") === "master" ? "master" : "independent";
-    return { blocks, slots, mode };
+    const view = { blocks, slots, mode };
+    const tParam = q.get("t");
+    if (tParam) {
+      const ts = tParam.split(",");
+      if (ts.length === 7) {
+        view.transpose = ts.map((x) => {
+          const n = parseInt(x, 10) || 0;
+          return Math.max(-24, Math.min(24, n));
+        });
+      }
+    }
+    const u = parseInt(q.get("u") || "120", 10);
+    if (u >= 20 && u <= 300) view.bpm = u;
+    return view;
   } catch (e) {
     return null; // malformed → fresh-session flow
   }

@@ -6,15 +6,19 @@
 //     all bars re-converge there); head-start entry sets anchor = entryTick.
 //   - cycleLen is COMPUTED, never hardcoded, so future longer loops don't break
 //     master mode.
-//   - Voice triggering carries pitch + per-slot transpose hook for the
-//     future chord/note-mapping overlay; nothing in here bakes in GM key 35.
+//   - Tempo is a piecewise tick↔second map (segments): setBpm() queues a change
+//     that commits at the next shared boundary so the ensemble retimes together.
+//     Render-time only — §5's 120 BPM and the .mid download are untouched.
+//   - Voice triggering carries pitch + per-slot transpose (melodic voices;
+//     percussion ignores it); future chord overlay lands on the same seam.
 //
 // Protocol: timing math in integer ticks (§8); seconds = ticks / 960 (§A5).
 
 import { BAR_TICKS, NOTE_VELOCITY } from "./protocol.js";
 import { getVoice, VOICES } from "./synth.js";
 
-const TICKS_PER_SECOND = 960; // at PPQ 480 / 120 BPM
+const PPQ = 480; // §5 ticks per quarter
+const tpsFor = (bpm) => (bpm * PPQ) / 60; // ticks/sec = 960 at 120 BPM
 const LOOKAHEAD_SEC = 0.12;
 const SCHED_INTERVAL_MS = 25;
 const REFERENCE_CYCLE = BAR_TICKS * 8; // 15360: max current loop, floor for master cycle
@@ -29,6 +33,9 @@ export class Ensemble {
     this.mode = "independent"; // 'independent' (bar quantum) | 'master' (cycle quantum)
     this.playing = false;
     this.startTime = 0; // ctx time at master tick 0
+    this._tpsBase = tpsFor(120); // current master ticks/sec (tempo lives in segments)
+    this._segments = null; // [{tick0, time0, tps}] piecewise tick↔second map
+    this._pending = null;  // {bpm, boundary} queued tempo change
     this.timer = null;
     this._cycleIdx = 0;
     this._listeners = new Set();
@@ -81,6 +88,29 @@ export class Ensemble {
     this.emit();
   }
 
+  // ── tempo (player-only; the derived stream and .mid download always
+  // carry the canonical 120 BPM of §5 — this is render-time retiming) ──
+  get bpm() { return Math.round(this._tpsBase * 60 / PPQ); }
+  get pendingBpm() { return this._pending ? this._pending.bpm : null; }
+  setBpm(v) {
+    const bpm = Math.round(Number(v));
+    if (!Number.isFinite(bpm) || bpm < 20 || bpm > 300) {
+      throw new Error(`BPM must be 20–300 (got ${v})`);
+    }
+    if (!this.playing) {
+      this._tpsBase = tpsFor(bpm);
+      this._pending = null;
+      this.emit();
+      return null; // effective immediately (applies next play)
+    }
+    // queue: commits at the next shared boundary — bar (independent) or
+    // cycle top (master) — so all parts retime together, phase-locked
+    const boundary = this._pending ? this._pending.boundary : this._nextBoundary();
+    this._pending = { bpm, boundary };
+    this.emit();
+    return boundary;
+  }
+
   // ── clock geometry ──
   get cycleLen() {
     let mx = REFERENCE_CYCLE;
@@ -88,7 +118,20 @@ export class Ensemble {
     return mx;
   }
   _quantum() { return this.mode === "master" ? this.cycleLen : BAR_TICKS; }
-  _curTick() { return (this.ctx.currentTime - this.startTime) * TICKS_PER_SECOND; }
+  // piecewise tick↔second map over tempo segments (continuous at boundaries)
+  _tickAt(t) {
+    const sg = this._segments || [{ tick0: 0, time0: this.startTime, tps: this._tpsBase }];
+    let s = sg[0];
+    for (const x of sg) { if (x.time0 <= t) s = x; else break; }
+    return s.tick0 + (t - s.time0) * s.tps;
+  }
+  _timeAt(tick) {
+    const sg = this._segments || [{ tick0: 0, time0: this.startTime, tps: this._tpsBase }];
+    let s = sg[0];
+    for (const x of sg) { if (x.tick0 <= tick) s = x; else break; }
+    return s.time0 + (tick - s.tick0) / s.tps;
+  }
+  _curTick() { return this._tickAt(this.ctx.currentTime); }
   _nextBoundary() {
     const q = this._quantum();
     const t = this._curTick();
@@ -119,6 +162,8 @@ export class Ensemble {
     this._comp = comp;
 
     this.startTime = ctx.currentTime + 0.1;
+    this._segments = [{ tick0: 0, time0: this.startTime, tps: this._tpsBase }];
+    this._pending = null;
     this._cycleIdx = 0;
     for (const s of this.slots) {
       s.part = (s.block && !s.muted) ? this._buildPart(s.block, false) : null;
@@ -137,6 +182,7 @@ export class Ensemble {
     }
     this.bus = null; this._comp = null;
     this.playing = false;
+    this._segments = null; this._pending = null; // discard uncommitted tempo
     for (const s of this.slots) s.part = null;
     this.emit();
   }
@@ -163,7 +209,17 @@ export class Ensemble {
     const now = ctx.currentTime;
     const cur = this._curTick();
     if (cur < 0) return; // pre-roll
-    const horizon = (now + LOOKAHEAD_SEC - this.startTime) * TICKS_PER_SECOND;
+
+    // commit queued tempo change at its boundary (continuous piecewise map)
+    if (this._pending && cur >= this._pending.boundary) {
+      const b = this._pending.boundary;
+      const t0 = this._timeAt(b);
+      this._segments.push({ tick0: b, time0: t0, tps: tpsFor(this._pending.bpm) });
+      this._tpsBase = tpsFor(this._pending.bpm);
+      this._pending = null;
+      this.emit();
+    }
+    const horizon = this._tickAt(now + LOOKAHEAD_SEC);
 
     if (this.mode === "master") {
       const ci = Math.floor(cur / this.cycleLen);
@@ -181,8 +237,8 @@ export class Ensemble {
         if (abs >= horizon) break;
         // audible window: after entry gate, and not stale (tab throttle guard)
         if (abs >= p.entry && abs >= cur - 2) {
-          const at = Math.max(this.startTime + abs / TICKS_PER_SECOND, now + 0.004);
-          voice.trigger(ctx, this.bus, at, o.soundingTicks / TICKS_PER_SECOND, NOTE_VELOCITY, midi);
+          const at = Math.max(this._timeAt(abs), now + 0.004);
+          voice.trigger(ctx, this.bus, at, o.soundingTicks / this._tpsBase, NOTE_VELOCITY, midi);
         }
         if (++p.cursor.idx >= p.onsets.length) { p.cursor.idx = 0; p.cursor.rep++; }
       }

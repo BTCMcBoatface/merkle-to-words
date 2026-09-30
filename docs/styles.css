@@ -84,6 +84,21 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: var
 #status { margin: 0 0 0 auto; color: var(--dim); font-size: 11px; max-width: 45%; text-align: right; }
 #status.err { color: var(--danger); }
 
+.bpm { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--dim); }
+#bpmInput {
+  width: 64px; background: var(--card2); border: 1.5px solid var(--line);
+  color: var(--text); border-radius: 10px; padding: 8px 6px; font-size: 14px;
+}
+#bpmInput:focus { outline: none; border-color: var(--accent); }
+#bpmInput.pending { border-color: var(--accent2); }
+
+.transpose { display: flex; gap: 4px; margin-top: 4px; align-items: center; }
+.transpose button {
+  background: none; border: 1px solid var(--line); color: var(--dim);
+  border-radius: 8px; padding: 2px 6px; font-size: 11px; cursor: pointer;
+}
+.transpose .tval { color: var(--accent); font-size: 11px; min-width: 30px; }
+
 .btn {
   background: var(--card2); color: var(--text); border: 1.5px solid var(--line);
   border-radius: 10px; padding: 9px 14px; font-size: 14px; cursor: pointer;

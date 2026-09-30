@@ -15,7 +15,7 @@ let busy = false;
 
 const $ = (s) => document.querySelector(s);
 const slotsEl = $("#slots"), shelfEl = $("#shelf"), statusEl = $("#status");
-const playBtn = $("#playBtn"), modeBtn = $("#modeBtn");
+const playBtn = $("#playBtn"), modeBtn = $("#modeBtn"), bpmInput = $("#bpmInput");
 
 // engine mutators (mute etc.) notify us so the DOM always matches state
 engine.onChange(() => render());
@@ -39,6 +39,8 @@ function view() {
     blocks: blocks.map((b) => ({ height: b.height, rootHex: b.rootHex })),
     slots: engine.slots.map((s) => (s.block ? blocks.indexOf(s.block) : -1)),
     mode: engine.mode,
+    transpose: engine.slots.map((s) => s.transpose | 0),
+    bpm: engine.bpm,
   };
 }
 function persist() { session.save(view()); }
@@ -123,6 +125,30 @@ function render() {
       acts.appendChild(out);
     }
     el.appendChild(acts);
+
+    // transpose: melodic voices only — our drum synths are unpitched and
+    // ignore midiNote, so a semitone shift on percussion is meaningless
+    if (voice.melodic) {
+      const tRow = document.createElement("div");
+      tRow.className = "transpose";
+      for (const [label, delta] of [["−12", -12], ["−1", -1], ["+1", 1], ["+12", 12]]) {
+        const tb = document.createElement("button");
+        tb.textContent = label;
+        tb.title = `${delta > 0 ? "up" : "down"} ${Math.abs(delta) === 12 ? "an octave" : "a semitone"}`;
+        tb.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const nv = Math.max(-24, Math.min(24, (s.transpose | 0) + delta));
+          engine.setTranspose(i, nv);
+          persist();
+        });
+        tRow.appendChild(tb);
+      }
+      const tv = document.createElement("span");
+      tv.className = "tval";
+      tv.textContent = s.transpose ? `T${s.transpose > 0 ? "+" : ""}${s.transpose}` : "";
+      tRow.appendChild(tv);
+      el.appendChild(tRow);
+    }
 
     // tap-to-move
     el.addEventListener("click", () => {
@@ -219,6 +245,10 @@ function render() {
   playBtn.textContent = engine.playing ? "■ stop" : "▶ play";
   modeBtn.textContent = engine.mode === "master" ? "8-bar cycle" : "bars";
   playBtn.disabled = busy;
+  if (document.activeElement !== bpmInput) {
+    bpmInput.value = engine.pendingBpm ?? engine.bpm;
+  }
+  bpmInput.classList.toggle("pending", !!engine.pendingBpm);
 }
 
 // ── transport wiring ──
@@ -233,6 +263,23 @@ modeBtn.addEventListener("click", () => {
     : "independent: parts loop freely on the bar grid");
   persist(); render();
 });
+function applyBpmInput() {
+  const v = parseInt(bpmInput.value, 10);
+  if (Number.isNaN(v)) { render(); return; }
+  try {
+    const boundary = engine.setBpm(v);
+    if (boundary !== null) {
+      setStatus(`tempo → ${engine.pendingBpm} BPM at next ${engine.mode === "master" ? "cycle" : "bar"}`);
+    } else {
+      setStatus(`tempo set to ${engine.bpm} BPM`);
+    }
+  } catch (e) {
+    setStatus(String(e.message || e), true);
+  }
+  persist(); render();
+}
+bpmInput.addEventListener("change", applyBpmInput);
+bpmInput.addEventListener("keydown", (e) => { if (e.key === "Enter") bpmInput.blur(); });
 $("#resyncBtn").addEventListener("click", () => {
   engine.resyncAllToTop();
   setStatus("re-aligned: all parts back to tick 0");
@@ -279,6 +326,8 @@ async function bootRestored(st) {
     } catch (e) { /* bad root in URL → skip */ }
   }
   engine.setMode(st.mode);
+  if (st.transpose) st.transpose.forEach((n, i) => { engine.slots[i].transpose = n | 0; });
+  if (st.bpm) engine.setBpm(st.bpm);
   st.slots.forEach((bi, i) => { if (bi >= 0 && blocks[bi]) engine.setSlot(i, blocks[bi]); });
   setStatus("session restored (no network used)");
   render();
