@@ -65,6 +65,28 @@ Each leaf's first 11 bits (0–2047) map to a note duration via a weighted looku
 
 If no merkle root is provided, the script fetches the latest Bitcoin block from the Blockstream API, using its merkle root and displaying the block hash for reference. Falls back to a default value if the API is unreachable.
 
+The full cross-language specification for this pipeline is [`MIDI-PROTOCOL.md`](MIDI-PROTOCOL.md) (`M2M-RHYTHM v1.0.0`) — the contract that both this Python script and any future implementation (e.g., the JavaScript web player) conform to. Its §7.4 rules (cyclic leaf reuse, no zero-length notes) are implemented; files in `midi-files/` generated before the fix predate the patch.
+
+## Web player (merkle ensemble)
+
+A browser-based ensemble player lives in [`docs/`](docs/) and is served by GitHub Pages: it derives the same rhythm patterns in JavaScript, fetches Bitcoin blocks on request (latest tip, or any block height — old blocks welcome), and plays up to 8 blocks across 7 instrument slots (bass drum, snare, closed/open hi-hat, lead, bass, organ) synthesized live with Web Audio in an 808-flavored style. Dark mode, mobile-first, no build step, no dependencies.
+
+- **Slots are the instruments** — drop a block into a slot permanently to re-voice it; one block per slot; spare blocks park on the shelf.
+- **Everything syncs** — all parts start at tick 0 on transport start; loops are 1, 2, 4, or 8 bars, so the ensemble re-converges on the bar grid (toggle: independent bars / 8-bar master cycle with auto re-align; a ⟲ re-align button resets all parts to bar 0).
+- **Session sharing** — the arrangement (block heights + full merkle roots + slot map) lives in the page URL and localStorage; copy-link to share, and reloads re-derive offline-style (no API needed).
+- **Downloads** — any block's pattern downloads as a protocol-conformant `.mid` (byte-identical to the Python reference output) for use in other DAWs.
+
+**Verify the JS matches Python** (the protocol's conformance test):
+
+```
+python3 make-fixtures.py        # writes tests/fixtures.json (needs mido)
+node tests/verify.mjs           # PASS: JS E(R) + SMF bytes == Python reference
+```
+
+**Run locally:** `python3 -m http.server -d docs 8123` → http://localhost:8123/
+
+**Deploy:** repo Settings → Pages → Source: *Deploy from a branch* → `main` / `/docs`.
+
 **Usage:**
 ```
 python3 midi-from-merkle.py                          # fetches latest BTC block merkle root

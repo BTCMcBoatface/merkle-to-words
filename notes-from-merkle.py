@@ -23,6 +23,10 @@ HOW IT WORKS:
    - Next byte: base octave (byte mod 3 + 2 → octaves 2, 3, or 4)
 6. Notes are placed sequentially, filling the target bar count exactly
    - If the last note would overflow, it is truncated to fill remaining space
+   - If the 32 leaves run out first (8-bar loops), the duration/pitch sequence
+     cycles from leaf 0 (leaf[i mod 32]) until the target is filled exactly
+     (rhythm rules normative in MIDI-PROTOCOL.md §7.4; see MIDI-PROTOCOL.md
+     Appendix A — M2M-NOTES is not yet spec-frozen)
 7. Output uses Acoustic Grand Piano (GM program 0, channel 0)
 8. Exports as a MIDI file at 120 BPM, 80% duty cycle
 
@@ -234,19 +238,44 @@ def fill_rhythm_to_target(
     durations: List[Tuple[str, int]],
     target_ticks: int
 ) -> List[Tuple[str, int, bool]]:
+    """
+    Fill notes sequentially until the target is reached exactly.
+
+    Follows MIDI-PROTOCOL.md §7.4 (same rules as the drum rhythm pipeline):
+
+    - Placement walks the periodic sequence durations[i % L]. If the 32 leaves
+      run out before the target is filled (common for 8-bar loops), placement
+      wraps around to the first leaf and continues.
+    - Truncation rule: the first note whose duration would overflow the
+      remaining space is truncated to fill it exactly and terminates the
+      sequence.
+    - Exact rule: a note landing exactly on the target terminates the sequence
+      un-truncated. A zero-length note is never appended.
+
+    Guarantees: sum of returned tick counts == target_ticks exactly.
+    """
     notes = []
     accumulated = 0
+    n = len(durations)
 
-    for name, ticks in durations:
+    if n == 0:
+        return notes
+
+    i = 0
+    while accumulated < target_ticks:
+        name, ticks = durations[i % n]
         remaining = target_ticks - accumulated
 
-        if ticks <= remaining:
+        if ticks > remaining:
+            # Note would overflow — truncate to fill remaining space exactly
+            notes.append((name, remaining, True))
+            break
+        else:
+            # Note fits within the remaining space — use it as-is
             notes.append((name, ticks, False))
             accumulated += ticks
-        else:
-            notes.append((name, remaining, True))
-            accumulated = target_ticks
-            break
+
+        i += 1
 
     return notes
 
@@ -327,15 +356,18 @@ def display_results(
 
     notes_used = len(notes)
     last_truncated = notes[-1][2] if notes else False
-    truncation_note = " (last note truncated to fit)" if last_truncated else ""
-    print(f"Notes used: {notes_used} of {len(leaves)}{truncation_note}\n")
+    truncated_note = " (last note truncated to fit)" if last_truncated else ""
+    wrapped = notes_used - len(leaves)
+    wrap_note = f" (cycled {wrapped} wrapped)" if wrapped > 0 else ""
+    print(f"Notes used: {notes_used} of {len(leaves)}{wrap_note}{truncated_note}\n")
 
     print("Leaf hashes (first 16 chars) → Duration → Scale degree → MIDI note:")
     print("-" * 85)
-    for i, ((name, ticks, was_truncated, midi_note), leaf) in enumerate(zip(notes, leaves), start=1):
+    for i, (name, ticks, was_truncated, midi_note) in enumerate(notes, start=1):
+        leaf = leaves[(i - 1) % len(leaves)]
         leaf_short = leaf[:16]
         beats = ticks / TICKS_PER_QUARTER
-        marker = " ← truncated" if was_truncated else ""
+        marker = " ← truncated" if was_truncated else (" ← wrapped" if i > len(leaves) else "")
         note_name = NOTE_NAMES[midi_note % 12]
         note_octave = (midi_note // 12) - 1
         print(f"  {i:>2}. {leaf_short}... → {name:<16} ({beats:.3g} beats) → {note_name}{note_octave} (MIDI {midi_note}){marker}")
@@ -347,7 +379,7 @@ def display_results(
 
 # ── CLI parsing ──────────────────────────────────────────────────────────────
 
-def parse_args(argv: List[str]) -> Tuple[Optional[str], Optional[str]]:
+def parse_args(argv: List[str]) -> Tuple[Optional[str], Optional[str], Optional[str]]:
     mode_override = None
     root_override = None
     merkle_arg = None
@@ -447,8 +479,11 @@ def main():
 
     rhythm_notes = fill_rhythm_to_target(durations, target_ticks)
 
+    # Wrap-aware assembly: note i derives from leaf[i % 32] (MIDI-PROTOCOL.md §7.4),
+    # so its scale degree must come from the same wrapped leaf, not zip-truncated 1:1.
     notes = []
-    for i, ((name, ticks, was_truncated), degree) in enumerate(zip(rhythm_notes, scale_degrees)):
+    for i, (name, ticks, was_truncated) in enumerate(rhythm_notes):
+        degree = scale_degrees[i % len(scale_degrees)]
         midi_note = scale_degree_to_midi(degree, scale_params)
         notes.append((name, ticks, was_truncated, midi_note))
 

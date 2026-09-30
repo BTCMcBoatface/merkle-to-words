@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <title>merkle ensemble — block rhythm player</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <header>
+    <h1>merkle<span>ensemble</span></h1>
+    <p class="tag">M2M-RHYTHM v1.0.0 · bitcoin merkle roots → rhythm</p>
+  </header>
+
+  <main>
+    <section id="slots" aria-label="Instrument slots"></section>
+    <section id="shelfSection" aria-label="Block collection">
+      <h2>Blocks <span class="count" id="blockCount"></span></h2>
+      <div id="shelf"></div>
+      <div id="fetchRow">
+        <input id="heightInput" type="text" inputmode="numeric" placeholder="block height" aria-label="block height">
+        <button id="fetchHeight" class="btn">fetch</button>
+        <button id="fetchLatest" class="btn">get latest</button>
+      </div>
+    </section>
+  </main>
+
+  <footer id="transport">
+    <button id="playBtn" class="btn primary">▶ play</button>
+    <button id="modeBtn" class="btn" title="loop alignment mode">bars</button>
+    <button id="resyncBtn" class="btn" title="reset all parts to bar 0 at the next boundary">⟲ re-align</button>
+    <button id="copyBtn" class="btn" title="copy shareable session URL">⧉ link</button>
+    <button id="resetBtn" class="btn danger" title="clear session">✕</button>
+    <p id="status" role="status"></p>
+  </footer>
+
+  <noscript>This player needs JavaScript (it derives rhythm patterns in your browser).</noscript>
+  <script type="module" src="./js/ui.js"></script>
+</body>
+</html>

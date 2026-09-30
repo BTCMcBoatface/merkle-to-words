@@ -16,7 +16,10 @@ HOW IT WORKS:
 4. Each leaf's first 11 bits map to a note duration via a weighted lookup table
 5. Notes are placed sequentially, filling the target bar count exactly
    - If the last note would overflow, it is truncated to fill remaining space
+   - If the 32 leaves run out first (8-bar loops), the duration sequence
+     cycles from leaf 0 until the target is filled exactly
    - This guarantees the MIDI loops cleanly with no partial bars
+     (normative rules: MIDI-PROTOCOL.md §7.4)
 6. Output uses GM drum channel (channel 10) with Acoustic Bass Drum (MIDI 35)
 7. Exports as a MIDI file at 120 BPM, 80% duty cycle
 
@@ -28,6 +31,9 @@ DESIGN DECISIONS:
   This follows musical phrasing convention and avoids awkward odd-bar loops.
 - Last-note truncation: Guarantees exact bar count for clean looping.
   Without this, the rhythm would end mid-bar and loop awkwardly.
+- Cyclic leaf reuse (MIDI-PROTOCOL.md §7.4): an 8-bar loop often needs more
+  than 32 notes; exhausted leaves wrap around (leaf[i mod 32]) until the
+  target is filled exactly. Exact fills stop cleanly — never a zero-length note.
 - Fixed tempo/time signature: No merkle bits consumed for structural parameters.
   Tempo is always 120 BPM, time signature is always 4/4.
 - API fallback: Fetches latest BTC block by default, falls back to hardcoded
@@ -294,15 +300,19 @@ def fill_rhythm_to_target(
     target_ticks: int
 ) -> List[Tuple[str, int, bool]]:
     """
-    Fill notes sequentially from the duration list until the target is reached.
+    Fill notes sequentially until the target is reached exactly.
 
-    The last note is truncated if necessary to fill the remaining space exactly.
-    This guarantees the total duration equals the target precisely, ensuring
-    the MIDI file loops cleanly with no partial bars or gaps at the end.
+    Follows MIDI-PROTOCOL.md §7.4:
 
-    Without truncation, the rhythm would end at an arbitrary point within a bar,
-    creating an awkward loop boundary. Truncating the final note preserves the
-    rhythmic feel while ensuring the loop point aligns with the bar boundary.
+    - Placement walks the periodic sequence durations[i % L]. If the 32 leaves
+      run out before the target is filled (common for 8-bar loops: the mean
+      32-leaf sum is ~14.6k ticks vs a 15,360-tick target), placement wraps
+      around to the first leaf and continues.
+    - Truncation rule: the first note whose duration would overflow the
+      remaining space is truncated to fill it exactly and terminates the
+      sequence.
+    - Exact rule: a note landing exactly on the target terminates the sequence
+      un-truncated. A zero-length note is never appended.
 
     Example (target = 4 bars = 16 beats = 7680 ticks):
         Note 1: dotted eighth  (0.75 beats) → accumulated: 0.75
@@ -322,19 +332,26 @@ def fill_rhythm_to_target(
     """
     notes = []
     accumulated = 0
+    n = len(durations)
 
-    for name, ticks in durations:
+    if n == 0:
+        return notes
+
+    i = 0
+    while accumulated < target_ticks:
+        name, ticks = durations[i % n]
         remaining = target_ticks - accumulated
 
-        if ticks <= remaining:
+        if ticks > remaining:
+            # Note would overflow — truncate to fill remaining space exactly
+            notes.append((name, remaining, True))
+            break
+        else:
             # Note fits within the remaining space — use it as-is
             notes.append((name, ticks, False))
             accumulated += ticks
-        else:
-            # Note would overflow — truncate to fill remaining space exactly
-            notes.append((name, remaining, True))
-            accumulated = target_ticks
-            break  # Target reached, stop adding notes
+
+        i += 1
 
     return notes
 
@@ -446,15 +463,18 @@ def display_results(
     # Count how many notes were actually used
     notes_used = len(notes)
     last_truncated = notes[-1][2] if notes else False
-    truncation_note = " (last note truncated to fit)" if last_truncated else ""
-    print(f"Notes used: {notes_used} of {len(leaves)}{truncation_note}\n")
+    truncated_note = " (last note truncated to fit)" if last_truncated else ""
+    wrapped = notes_used - len(leaves)
+    wrap_note = f" (cycled {wrapped} wrapped)" if wrapped > 0 else ""
+    print(f"Notes used: {notes_used} of {len(leaves)}{wrap_note}{truncated_note}\n")
 
     print("Leaf hashes (first 16 chars) → Duration:")
     print("-" * 65)
-    for i, ((name, ticks, was_truncated), leaf) in enumerate(zip(notes, leaves), start=1):
+    for i, (name, ticks, was_truncated) in enumerate(notes, start=1):
+        leaf = leaves[(i - 1) % len(leaves)]
         leaf_short = leaf[:16]
         beats = ticks / TICKS_PER_QUARTER
-        marker = " ← truncated" if was_truncated else ""
+        marker = " ← truncated" if was_truncated else (" ← wrapped" if i > len(leaves) else "")
         print(f"  {i:>2}. {leaf_short}... → {name:<16} ({beats:.3g} beats){marker}")
 
     total_beats = sum(t for _, t, _ in notes) / TICKS_PER_QUARTER

@@ -1,0 +1,1080 @@
+{
+ "protocol": "M2M-RHYTHM/1.0.0",
+ "fixtures": [
+  {
+   "root": "2e0f4eb72a525d443b731dce006d728a2f3575768a9e475fc1b4c66016475600",
+   "barCount": 1,
+   "firstTwoBits": "00",
+   "targetTicks": 1920,
+   "notes": [
+    {
+     "name": "dotted eighth",
+     "ticks": 360,
+     "truncated": false
+    },
+    {
+     "name": "eighth triplet",
+     "ticks": 320,
+     "truncated": false
+    },
+    {
+     "name": "sixteenth",
+     "ticks": 120,
+     "truncated": false
+    },
+    {
+     "name": "dotted quarter",
+     "ticks": 720,
+     "truncated": false
+    },
+    {
+     "name": "dotted half",
+     "ticks": 400,
+     "truncated": true
+    }
+   ],
+   "onsets": [
+    {
+     "tick": 0,
+     "durationTicks": 360,
+     "soundingTicks": 288
+    },
+    {
+     "tick": 360,
+     "durationTicks": 320,
+     "soundingTicks": 256
+    },
+    {
+     "tick": 680,
+     "durationTicks": 120,
+     "soundingTicks": 96
+    },
+    {
+     "tick": 800,
+     "durationTicks": 720,
+     "soundingTicks": 576
+    },
+    {
+     "tick": 1520,
+     "durationTicks": 400,
+     "soundingTicks": 320
+    }
+   ],
+   "sumTicks": 1920,
+   "noteCount": 5,
+   "wrapped": false,
+   "label": "default-1bar"
+  },
+  {
+   "root": "c000000000000000000000000000000000000000000000000000000000000001",
+   "barCount": 8,
+   "firstTwoBits": "11",
+   "targetTicks": 15360,
+   "notes": [
+    {
+     "name": "eighth triplet",
+     "ticks": 320,
+     "truncated": false
+    },
+    {
+     "name": "dotted eighth",
+     "ticks": 360,
+     "truncated": false
+    },
+    {
+     "name": "eighth triplet",
+     "ticks": 320,
+     "truncated": false
+    },
+    {
+     "name": "eighth",
+     "ticks": 240,
+     "truncated": false
+    },
+    {
+     "name": "eighth triplet",
+     "ticks": 320,
+     "truncated": false
+    },
+    {
+     "name": "quarter",
+     "ticks": 480,
+     "truncated": false
+    },
+    {
+     "name": "quarter",
+     "ticks": 480,
+     "truncated": false
+    },
+    {
+     "name": "eighth triplet",
+     "ticks": 320,
+     "truncated": false
+    },
+    {
+     "name": "sixteenth",
+     "ticks": 120,
+     "truncated": false
+    },
+    {
+     "name": "quarter",
+     "ticks": 480,
+     "truncated": false
+    },
+    {
+     "name": "eighth",
+     "ticks": 240,
+     "truncated": false
+    },
+    {
+     "name": "eighth",
+     "ticks": 240,
+     "truncated": false
+    },
+    {
+     "name": "eighth",
+     "ticks": 240,
+     "truncated": false
+    },
+    {
+     "name": "dotted half",
+     "ticks": 1440,
+     "truncated": false
+    },
+    {
+     "name": "sixteenth",
+     "ticks": 120,
+     "truncated": false
+    },
+    {
+     "name": "half",
+     "ticks": 960,
+     "truncated": false
+    },
+    {
+     "name": "eighth triplet",
+     "ticks": 320,
+     "truncated": false
+    },
+    {
+     "name": "eighth",
+     "ticks": 240,
+     "truncated": false
+    },
+    {
+     "name": "eighth triplet",
+     "ticks": 320,
+     "truncated": false
+    },
+    {
+     "name": "dotted quarter",
+     "ticks": 720,
+     "truncated": false
+    },
+    {
+     "name": "eighth triplet",
+     "ticks": 320,
+     "truncated": false
+    },
+    {
+     "name": "dotted eighth",
+     "ticks": 360,
+     "truncated": false
+    },
+    {
+     "name": "eighth triplet",
+     "ticks": 320,
+     "truncated": false
+    },
+    {
+     "name": "half",
+     "ticks": 960,
+     "truncated": false
+    },
+    {
+     "name": "dotted quarter",
+     "ticks": 720,
+     "truncated": false
+    },
+    {
+     "name": "quarter",
+     "ticks": 480,
+     "truncated": false
+    },
+    {
+     "name": "eighth triplet",
+     "ticks": 320,
+     "truncated": false
+    },
+    {
+     "name": "quarter",
+     "ticks": 480,
+     "truncated": false
+    },
+    {
+     "name": "eighth",
+     "ticks": 240,
+     "truncated": false
+    },
+    {
+     "name": "dotted eighth",
+     "ticks": 360,
+     "truncated": false
+    },
+    {
+     "name": "half",
+     "ticks": 960,
+     "truncated": false
+    },
+    {
+     "name": "eighth",
+     "ticks": 240,
+     "truncated": false
+    },
+    {
+     "name": "eighth triplet",
+     "ticks": 320,
+     "truncated": false
+    },
+    {
+     "name": "dotted eighth",
+     "ticks": 360,
+     "truncated": false
+    },
+    {
+     "name": "eighth triplet",
+     "ticks": 320,
+     "truncated": false
+    },
+    {
+     "name": "eighth",
+     "ticks": 240,
+     "truncated": false
+    },
+    {
+     "name": "eighth triplet",
+     "ticks": 80,
+     "truncated": true
+    }
+   ],
+   "onsets": [
+    {
+     "tick": 0,
+     "durationTicks": 320,
+     "soundingTicks": 256
+    },
+    {
+     "tick": 320,
+     "durationTicks": 360,
+     "soundingTicks": 288
+    },
+    {
+     "tick": 680,
+     "durationTicks": 320,
+     "soundingTicks": 256
+    },
+    {
+     "tick": 1000,
+     "durationTicks": 240,
+     "soundingTicks": 192
+    },
+    {
+     "tick": 1240,
+     "durationTicks": 320,
+     "soundingTicks": 256
+    },
+    {
+     "tick": 1560,
+     "durationTicks": 480,
+     "soundingTicks": 384
+    },
+    {
+     "tick": 2040,
+     "durationTicks": 480,
+     "soundingTicks": 384
+    },
+    {
+     "tick": 2520,
+     "durationTicks": 320,
+     "soundingTicks": 256
+    },
+    {
+     "tick": 2840,
+     "durationTicks": 120,
+     "soundingTicks": 96
+    },
+    {
+     "tick": 2960,
+     "durationTicks": 480,
+     "soundingTicks": 384
+    },
+    {
+     "tick": 3440,
+     "durationTicks": 240,
+     "soundingTicks": 192
+    },
+    {
+     "tick": 3680,
+     "durationTicks": 240,
+     "soundingTicks": 192
+    },
+    {
+     "tick": 3920,
+     "durationTicks": 240,
+     "soundingTicks": 192
+    },
+    {
+     "tick": 4160,
+     "durationTicks": 1440,
+     "soundingTicks": 1152
+    },
+    {
+     "tick": 5600,
+     "durationTicks": 120,
+     "soundingTicks": 96
+    },
+    {
+     "tick": 5720,
+     "durationTicks": 960,
+     "soundingTicks": 768
+    },
+    {
+     "tick": 6680,
+     "durationTicks": 320,
+     "soundingTicks": 256
+    },
+    {
+     "tick": 7000,
+     "durationTicks": 240,
+     "soundingTicks": 192
+    },
+    {
+     "tick": 7240,
+     "durationTicks": 320,
+     "soundingTicks": 256
+    },
+    {
+     "tick": 7560,
+     "durationTicks": 720,
+     "soundingTicks": 576
+    },
+    {
+     "tick": 8280,
+     "durationTicks": 320,
+     "soundingTicks": 256
+    },
+    {
+     "tick": 8600,
+     "durationTicks": 360,
+     "soundingTicks": 288
+    },
+    {
+     "tick": 8960,
+     "durationTicks": 320,
+     "soundingTicks": 256
+    },
+    {
+     "tick": 9280,
+     "durationTicks": 960,
+     "soundingTicks": 768
+    },
+    {
+     "tick": 10240,
+     "durationTicks": 720,
+     "soundingTicks": 576
+    },
+    {
+     "tick": 10960,
+     "durationTicks": 480,
+     "soundingTicks": 384
+    },
+    {
+     "tick": 11440,
+     "durationTicks": 320,
+     "soundingTicks": 256
+    },
+    {
+     "tick": 11760,
+     "durationTicks": 480,
+     "soundingTicks": 384
+    },
+    {
+     "tick": 12240,
+     "durationTicks": 240,
+     "soundingTicks": 192
+    },
+    {
+     "tick": 12480,
+     "durationTicks": 360,
+     "soundingTicks": 288
+    },
+    {
+     "tick": 12840,
+     "durationTicks": 960,
+     "soundingTicks": 768
+    },
+    {
+     "tick": 13800,
+     "durationTicks": 240,
+     "soundingTicks": 192
+    },
+    {
+     "tick": 14040,
+     "durationTicks": 320,
+     "soundingTicks": 256
+    },
+    {
+     "tick": 14360,
+     "durationTicks": 360,
+     "soundingTicks": 288
+    },
+    {
+     "tick": 14720,
+     "durationTicks": 320,
+     "soundingTicks": 256
+    },
+    {
+     "tick": 15040,
+     "durationTicks": 240,
+     "soundingTicks": 192
+    },
+    {
+     "tick": 15280,
+     "durationTicks": 80,
+     "soundingTicks": 64
+    }
+   ],
+   "sumTicks": 15360,
+   "noteCount": 37,
+   "wrapped": true,
+   "label": "wrapped-8bar",
+   "smfHex": "4d546864000000060001000101e04d54726b000001ca00ff510307a12000992350820089230040230000992350822089230048230000992350820089230040230000992350814089230030230000992350820089230040230000992350830089230060230000992350830089230060230000992350820089230040230000992350608923001823000099235083008923006023000099235081408923003023000099235081408923003023000099235081408923003023000099235089008923008220230000992350608923001823000099235086008923008140230000992350820089230040230000992350814089230030230000992350820089230040230000992350844089230081102300009923508200892300402300009923508220892300482300009923508200892300402300009923508600892300814023000099235084408923008110230000992350830089230060230000992350820089230040230000992350830089230060230000992350814089230030230000992350822089230048230000992350860089230081402300009923508140892300302300009923508200892300402300009923508220892300482300009923508200892300402300009923508140892300302300009923504089230010230000ff2f00"
+  },
+  {
+   "root": "dcc5d85809a070a24e5031cb55283a849252216e1d0bef591e0802d9e2670084",
+   "barCount": 8,
+   "firstTwoBits": "11",
+   "targetTicks": 15360,
+   "notes": [
+    {
+     "name": "quarter",
+     "ticks": 480,
+     "truncated": false
+    },
+    {
+     "name": "sixteenth",
+     "ticks": 120,
+     "truncated": false
+    },
+    {
+     "name": "eighth",
+     "ticks": 240,
+     "truncated": false
+    },
+    {
+     "name": "sixteenth",
+     "ticks": 120,
+     "truncated": false
+    },
+    {
+     "name": "dotted quarter",
+     "ticks": 720,
+     "truncated": false
+    },
+    {
+     "name": "quarter",
+     "ticks": 480,
+     "truncated": false
+    },
+    {
+     "name": "sixteenth",
+     "ticks": 120,
+     "truncated": false
+    },
+    {
+     "name": "half",
+     "ticks": 960,
+     "truncated": false
+    },
+    {
+     "name": "quarter",
+     "ticks": 480,
+     "truncated": false
+    },
+    {
+     "name": "quarter",
+     "ticks": 480,
+     "truncated": false
+    },
+    {
+     "name": "dotted half",
+     "ticks": 1440,
+     "truncated": false
+    },
+    {
+     "name": "dotted half",
+     "ticks": 1440,
+     "truncated": false
+    },
+    {
+     "name": "sixteenth",
+     "ticks": 120,
+     "truncated": false
+    },
+    {
+     "name": "sixteenth",
+     "ticks": 120,
+     "truncated": false
+    },
+    {
+     "name": "dotted half",
+     "ticks": 1440,
+     "truncated": false
+    },
+    {
+     "name": "quarter",
+     "ticks": 480,
+     "truncated": false
+    },
+    {
+     "name": "eighth",
+     "ticks": 240,
+     "truncated": false
+    },
+    {
+     "name": "eighth triplet",
+     "ticks": 320,
+     "truncated": false
+    },
+    {
+     "name": "eighth",
+     "ticks": 240,
+     "truncated": false
+    },
+    {
+     "name": "half",
+     "ticks": 960,
+     "truncated": false
+    },
+    {
+     "name": "dotted eighth",
+     "ticks": 360,
+     "truncated": false
+    },
+    {
+     "name": "sixteenth",
+     "ticks": 120,
+     "truncated": false
+    },
+    {
+     "name": "dotted half",
+     "ticks": 1440,
+     "truncated": false
+    },
+    {
+     "name": "eighth triplet",
+     "ticks": 320,
+     "truncated": false
+    },
+    {
+     "name": "quarter",
+     "ticks": 480,
+     "truncated": false
+    },
+    {
+     "name": "eighth",
+     "ticks": 240,
+     "truncated": false
+    },
+    {
+     "name": "half",
+     "ticks": 960,
+     "truncated": false
+    },
+    {
+     "name": "eighth",
+     "ticks": 240,
+     "truncated": false
+    },
+    {
+     "name": "sixteenth",
+     "ticks": 120,
+     "truncated": false
+    },
+    {
+     "name": "half",
+     "ticks": 80,
+     "truncated": true
+    }
+   ],
+   "onsets": [
+    {
+     "tick": 0,
+     "durationTicks": 480,
+     "soundingTicks": 384
+    },
+    {
+     "tick": 480,
+     "durationTicks": 120,
+     "soundingTicks": 96
+    },
+    {
+     "tick": 600,
+     "durationTicks": 240,
+     "soundingTicks": 192
+    },
+    {
+     "tick": 840,
+     "durationTicks": 120,
+     "soundingTicks": 96
+    },
+    {
+     "tick": 960,
+     "durationTicks": 720,
+     "soundingTicks": 576
+    },
+    {
+     "tick": 1680,
+     "durationTicks": 480,
+     "soundingTicks": 384
+    },
+    {
+     "tick": 2160,
+     "durationTicks": 120,
+     "soundingTicks": 96
+    },
+    {
+     "tick": 2280,
+     "durationTicks": 960,
+     "soundingTicks": 768
+    },
+    {
+     "tick": 3240,
+     "durationTicks": 480,
+     "soundingTicks": 384
+    },
+    {
+     "tick": 3720,
+     "durationTicks": 480,
+     "soundingTicks": 384
+    },
+    {
+     "tick": 4200,
+     "durationTicks": 1440,
+     "soundingTicks": 1152
+    },
+    {
+     "tick": 5640,
+     "durationTicks": 1440,
+     "soundingTicks": 1152
+    },
+    {
+     "tick": 7080,
+     "durationTicks": 120,
+     "soundingTicks": 96
+    },
+    {
+     "tick": 7200,
+     "durationTicks": 120,
+     "soundingTicks": 96
+    },
+    {
+     "tick": 7320,
+     "durationTicks": 1440,
+     "soundingTicks": 1152
+    },
+    {
+     "tick": 8760,
+     "durationTicks": 480,
+     "soundingTicks": 384
+    },
+    {
+     "tick": 9240,
+     "durationTicks": 240,
+     "soundingTicks": 192
+    },
+    {
+     "tick": 9480,
+     "durationTicks": 320,
+     "soundingTicks": 256
+    },
+    {
+     "tick": 9800,
+     "durationTicks": 240,
+     "soundingTicks": 192
+    },
+    {
+     "tick": 10040,
+     "durationTicks": 960,
+     "soundingTicks": 768
+    },
+    {
+     "tick": 11000,
+     "durationTicks": 360,
+     "soundingTicks": 288
+    },
+    {
+     "tick": 11360,
+     "durationTicks": 120,
+     "soundingTicks": 96
+    },
+    {
+     "tick": 11480,
+     "durationTicks": 1440,
+     "soundingTicks": 1152
+    },
+    {
+     "tick": 12920,
+     "durationTicks": 320,
+     "soundingTicks": 256
+    },
+    {
+     "tick": 13240,
+     "durationTicks": 480,
+     "soundingTicks": 384
+    },
+    {
+     "tick": 13720,
+     "durationTicks": 240,
+     "soundingTicks": 192
+    },
+    {
+     "tick": 13960,
+     "durationTicks": 960,
+     "soundingTicks": 768
+    },
+    {
+     "tick": 14920,
+     "durationTicks": 240,
+     "soundingTicks": 192
+    },
+    {
+     "tick": 15160,
+     "durationTicks": 120,
+     "soundingTicks": 96
+    },
+    {
+     "tick": 15280,
+     "durationTicks": 80,
+     "soundingTicks": 64
+    }
+   ],
+   "sumTicks": 15360,
+   "noteCount": 30,
+   "wrapped": false,
+   "label": "truncating-8bar"
+  },
+  {
+   "root": "7dd39480cb8175d04651cfae32193ad85f1dfe5a4ab67dc56630befc2c284680",
+   "barCount": 2,
+   "firstTwoBits": "01",
+   "targetTicks": 3840,
+   "notes": [
+    {
+     "name": "dotted eighth",
+     "ticks": 360,
+     "truncated": false
+    },
+    {
+     "name": "sixteenth",
+     "ticks": 120,
+     "truncated": false
+    },
+    {
+     "name": "half",
+     "ticks": 960,
+     "truncated": false
+    },
+    {
+     "name": "quarter",
+     "ticks": 480,
+     "truncated": false
+    },
+    {
+     "name": "eighth",
+     "ticks": 240,
+     "truncated": false
+    },
+    {
+     "name": "dotted quarter",
+     "ticks": 720,
+     "truncated": false
+    },
+    {
+     "name": "eighth",
+     "ticks": 240,
+     "truncated": false
+    },
+    {
+     "name": "dotted quarter",
+     "ticks": 720,
+     "truncated": false
+    }
+   ],
+   "onsets": [
+    {
+     "tick": 0,
+     "durationTicks": 360,
+     "soundingTicks": 288
+    },
+    {
+     "tick": 360,
+     "durationTicks": 120,
+     "soundingTicks": 96
+    },
+    {
+     "tick": 480,
+     "durationTicks": 960,
+     "soundingTicks": 768
+    },
+    {
+     "tick": 1440,
+     "durationTicks": 480,
+     "soundingTicks": 384
+    },
+    {
+     "tick": 1920,
+     "durationTicks": 240,
+     "soundingTicks": 192
+    },
+    {
+     "tick": 2160,
+     "durationTicks": 720,
+     "soundingTicks": 576
+    },
+    {
+     "tick": 2880,
+     "durationTicks": 240,
+     "soundingTicks": 192
+    },
+    {
+     "tick": 3120,
+     "durationTicks": 720,
+     "soundingTicks": 576
+    }
+   ],
+   "sumTicks": 3840,
+   "noteCount": 8,
+   "wrapped": false,
+   "label": "exact-fill-2bar"
+  },
+  {
+   "root": "a253a62e3840ddc07c242e8895c656920fb80c534b07f809ded379157405dd16",
+   "barCount": 4,
+   "firstTwoBits": "10",
+   "targetTicks": 7680,
+   "notes": [
+    {
+     "name": "dotted half",
+     "ticks": 1440,
+     "truncated": false
+    },
+    {
+     "name": "eighth",
+     "ticks": 240,
+     "truncated": false
+    },
+    {
+     "name": "dotted quarter",
+     "ticks": 720,
+     "truncated": false
+    },
+    {
+     "name": "quarter",
+     "ticks": 480,
+     "truncated": false
+    },
+    {
+     "name": "dotted eighth",
+     "ticks": 360,
+     "truncated": false
+    },
+    {
+     "name": "sixteenth",
+     "ticks": 120,
+     "truncated": false
+    },
+    {
+     "name": "half",
+     "ticks": 960,
+     "truncated": false
+    },
+    {
+     "name": "dotted half",
+     "ticks": 1440,
+     "truncated": false
+    },
+    {
+     "name": "half",
+     "ticks": 960,
+     "truncated": false
+    },
+    {
+     "name": "dotted eighth",
+     "ticks": 360,
+     "truncated": false
+    },
+    {
+     "name": "dotted quarter",
+     "ticks": 600,
+     "truncated": true
+    }
+   ],
+   "onsets": [
+    {
+     "tick": 0,
+     "durationTicks": 1440,
+     "soundingTicks": 1152
+    },
+    {
+     "tick": 1440,
+     "durationTicks": 240,
+     "soundingTicks": 192
+    },
+    {
+     "tick": 1680,
+     "durationTicks": 720,
+     "soundingTicks": 576
+    },
+    {
+     "tick": 2400,
+     "durationTicks": 480,
+     "soundingTicks": 384
+    },
+    {
+     "tick": 2880,
+     "durationTicks": 360,
+     "soundingTicks": 288
+    },
+    {
+     "tick": 3240,
+     "durationTicks": 120,
+     "soundingTicks": 96
+    },
+    {
+     "tick": 3360,
+     "durationTicks": 960,
+     "soundingTicks": 768
+    },
+    {
+     "tick": 4320,
+     "durationTicks": 1440,
+     "soundingTicks": 1152
+    },
+    {
+     "tick": 5760,
+     "durationTicks": 960,
+     "soundingTicks": 768
+    },
+    {
+     "tick": 6720,
+     "durationTicks": 360,
+     "soundingTicks": 288
+    },
+    {
+     "tick": 7080,
+     "durationTicks": 600,
+     "soundingTicks": 480
+    }
+   ],
+   "sumTicks": 7680,
+   "noteCount": 11,
+   "wrapped": false,
+   "label": "plain-4bar"
+  },
+  {
+   "root": "747a53579e0d2127af6c0e20cf9f10cd397b4801724c6cc2335b4f465587ad25",
+   "barCount": 2,
+   "firstTwoBits": "01",
+   "targetTicks": 3840,
+   "notes": [
+    {
+     "name": "sixteenth",
+     "ticks": 120,
+     "truncated": false
+    },
+    {
+     "name": "dotted half",
+     "ticks": 1440,
+     "truncated": false
+    },
+    {
+     "name": "sixteenth",
+     "ticks": 120,
+     "truncated": false
+    },
+    {
+     "name": "sixteenth",
+     "ticks": 120,
+     "truncated": false
+    },
+    {
+     "name": "eighth",
+     "ticks": 240,
+     "truncated": false
+    },
+    {
+     "name": "sixteenth",
+     "ticks": 120,
+     "truncated": false
+    },
+    {
+     "name": "quarter",
+     "ticks": 480,
+     "truncated": false
+    },
+    {
+     "name": "dotted half",
+     "ticks": 1200,
+     "truncated": true
+    }
+   ],
+   "onsets": [
+    {
+     "tick": 0,
+     "durationTicks": 120,
+     "soundingTicks": 96
+    },
+    {
+     "tick": 120,
+     "durationTicks": 1440,
+     "soundingTicks": 1152
+    },
+    {
+     "tick": 1560,
+     "durationTicks": 120,
+     "soundingTicks": 96
+    },
+    {
+     "tick": 1680,
+     "durationTicks": 120,
+     "soundingTicks": 96
+    },
+    {
+     "tick": 1800,
+     "durationTicks": 240,
+     "soundingTicks": 192
+    },
+    {
+     "tick": 2040,
+     "durationTicks": 120,
+     "soundingTicks": 96
+    },
+    {
+     "tick": 2160,
+     "durationTicks": 480,
+     "soundingTicks": 384
+    },
+    {
+     "tick": 2640,
+     "durationTicks": 1200,
+     "soundingTicks": 960
+    }
+   ],
+   "sumTicks": 3840,
+   "noteCount": 8,
+   "wrapped": false,
+   "label": "plain-2bar"
+  }
+ ]
+}
