@@ -1,11 +1,11 @@
-# M2M-MIDI Protocol — v1.0.0
+# M2M-MIDI Protocol — v1.0.1
 
 **A normative specification for deriving a rhythmic MIDI pattern from a Bitcoin merkle root.**
 
 | | |
 |---|---|
 | Protocol ID | `M2M-RHYTHM` |
-| Version | `1.0.0` |
+| Version | `1.0.1` |
 | Status | Frozen (`1.0.x` is backwards-compatible forever) |
 | Derived from | `midi-from-merkle.py` in `btcmcboatface/merkle-to-words` (commit `5b59f81`) |
 | Reference status | `midi-from-merkle.py` **conforms** — §7.4 patch applied post-`5b59f81`; archived `.mid` files predate the patch. `notes-from-merkle.py` uses the same patched rhythm engine (see Appendix A) |
@@ -369,8 +369,8 @@ unknown. The root prefix alone identifies the derivation; height is provenance o
 
 The protocol deliberately does **not** define: player/transport behavior, browser synth
 voices or sound mapping, fetch/caching policy, CORS, manifest or playlist indexes, audio
-encoding, visualizations, or pitched output (Appendix A). Those belong to the future web
-repo; nothing in them may alter §2–§9.
+encoding, visualizations, or pitched output (Appendix A). Those belong to the web player
+in this repo (`docs/`) and its future revisions; nothing in them may alter §2–§9.
 
 ---
 
@@ -416,3 +416,7 @@ clean exact-fill stop) and derives pitch of a wrapped note from the same wrapped
   bounds (§10), integer-semantics clauses (§8). Format type confirmed as 1 (mido default).
   Reference patched to conform after freeze (see §7.4 resolution note); spec rules
   themselves unchanged.
+- `1.0.1` — editorial only: the web player now lives in this repo (`docs/`), so §11
+  wording updated from "future web repo" to the in-repo app. No rule change; derivation
+  and event streams are byte-identical to `1.0.0` (fixture tags re-stamped;
+  `node tests/verify.mjs` passes unchanged).

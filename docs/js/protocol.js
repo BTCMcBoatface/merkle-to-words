@@ -1,9 +1,10 @@
-// protocol.js — M2M-RHYTHM v1.0.0 derivation (§2–§9 of MIDI-PROTOCOL.md)
+// protocol.js — M2M-RHYTHM v1.0.1 derivation (§2–§9 of MIDI-PROTOCOL.md)
+// 1.0.1 is editorial; derivation is byte-identical to 1.0.0.
 // DOM-free and side-effect-free: importable by the browser AND by Node tests.
 // Function names mirror midi-from-merkle.py deliberately.
 
 export const PROTOCOL_ID = "M2M-RHYTHM";
-export const PROTOCOL_VERSION = "1.0.0";
+export const PROTOCOL_VERSION = "1.0.1";
 
 // ── §5 Fixed structural constants (changing any is a MAJOR-version event) ──
 export const MERKLE_ROOT_HEX_LENGTH = 64;

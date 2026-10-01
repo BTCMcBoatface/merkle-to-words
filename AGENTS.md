@@ -7,7 +7,9 @@ Tools for converting a Bitcoin merkle root (256-bit hash) into human-readable wo
 - `words-from-merkle.py` — Converts merkle root to 21-word BIP-39 phrase
 - `midi-from-merkle.py` — Converts merkle root to rhythmic MIDI via merkle tree descent
 - `notes-from-merkle.py` — Converts merkle root to pitched MIDI melody; shares the MIDI-PROTOCOL.md §7.4 rhythm engine (pitched layer not yet spec-frozen — Appendix A)
-- `MIDI-PROTOCOL.md` — Canonical cross-language spec for the MIDI pipeline (v1.0.0, `M2M-RHYTHM`); the contract Python and future JS implementations must both conform to
+- `MIDI-PROTOCOL.md` — Canonical cross-language spec for the MIDI pipeline (v1.0.1, `M2M-RHYTHM`); the contract Python and future JS implementations must both conform to
+- `MIDI-NOTES-PROTOCOL.md` — Pitched layer + shoehorn pitch map + mapped export (`M2M-NOTES`, v0.2.0-DRAFT — draft, not frozen; OP1 bit-overlap resolved, OP2–4 open)
+- `PROJECT.md` — Living project record: status snapshot, decision log, roadmap, and the rules for adding features. Read it first when picking up roadmap/feature work
 - `docs/` — Web MIDI ensemble player (GitHub Pages, vanilla ESM; see "Web player" section below)
 - `make-fixtures.py` + `tests/` — Golden-vector cross-language sync check (Python reference → JSON fixtures → `node tests/verify.mjs` asserts JS matches)
 - `README.md` — Full documentation
@@ -62,7 +64,7 @@ Requires: `pip install mido`
 
 Vanilla ESM, no build step, dark-mode only, mobile-first. Serves from `docs/`
 (Pages: Settings → Pages → Deploy from branch → `main` / `/docs`).
-Spec contract: `MIDI-PROTOCOL.md` v1.0.0; player semantics: render-time instrument
+Spec contract: `MIDI-PROTOCOL.md` v1.0.1; player semantics: render-time instrument
 choice lives OUTSIDE the protocol (§11) — blocks always derive E(R) exactly.
 
 | File | Role |

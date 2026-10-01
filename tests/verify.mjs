@@ -19,7 +19,7 @@ function eq(actual, expected, where) {
   if (a !== e) fails.push(`${where}\n    js:  ${a}\n    py:  ${e}`);
 }
 
-const { fixtures } = JSON.parse(
+const { protocol: f0, fixtures } = JSON.parse(
   await readFile(new URL("./fixtures.json", import.meta.url), "utf8")
 );
 
@@ -45,5 +45,5 @@ if (fails.length) {
   for (const msg of fails) console.error("  ✗ " + msg);
   process.exit(1);
 } else {
-  console.log(`PASS — ${fixtures.length} golden vectors, ${checks} checks — JS E(R) matches Python reference (M2M-RHYTHM/1.0.0)`);
+  console.log(`PASS — ${fixtures.length} golden vectors, ${checks} checks — JS E(R) matches Python reference (${f0})`);
 }

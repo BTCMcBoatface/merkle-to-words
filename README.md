@@ -65,7 +65,7 @@ Each leaf's first 11 bits (0–2047) map to a note duration via a weighted looku
 
 If no merkle root is provided, the script fetches the latest Bitcoin block from the Blockstream API, using its merkle root and displaying the block hash for reference. Falls back to a default value if the API is unreachable.
 
-The full cross-language specification for this pipeline is [`MIDI-PROTOCOL.md`](MIDI-PROTOCOL.md) (`M2M-RHYTHM v1.0.0`) — the contract that both this Python script and any future implementation (e.g., the JavaScript web player) conform to. Its §7.4 rules (cyclic leaf reuse, no zero-length notes) are implemented; files in `midi-files/` generated before the fix predate the patch.
+The full cross-language specification for this pipeline is [`MIDI-PROTOCOL.md`](MIDI-PROTOCOL.md) (`M2M-RHYTHM v1.0.1`) — the contract that both this Python script and any future implementation (e.g., the JavaScript web player) conform to. Its §7.4 rules (cyclic leaf reuse, no zero-length notes) are implemented; files in `midi-files/` generated before the fix predate the patch.
 
 ## Web player (merkle ensemble)
 
@@ -86,6 +86,8 @@ node tests/verify.mjs           # PASS: JS E(R) + SMF bytes == Python reference
 **Run locally:** `python3 -m http.server -d docs 8123` → http://localhost:8123/
 
 **Deploy:** repo Settings → Pages → Source: *Deploy from a branch* → `main` / `/docs`.
+
+Roadmap, decisions, and feature discussion live in [`PROJECT.md`](PROJECT.md).
 
 **Usage:**
 ```

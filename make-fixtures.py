@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 make-fixtures.py — generate tests/fixtures.json: golden E(R) vectors derived
-from midi-from-merkle.py (the Python reference of M2M-RHYTHM v1.0.0).
+from midi-from-merkle.py (the Python reference; M2M-RHYTHM v1.0.1,
+derivation frozen at 1.0.0).
 
 These fixtures are the cross-language sync check: docs/js/protocol.js must
 reproduce them exactly (run via tests/verify.mjs under Node).
@@ -147,7 +148,7 @@ def main():
     out = HERE / "tests" / "fixtures.json"
     out.parent.mkdir(exist_ok=True)
     out.write_text(json.dumps({
-        "protocol": "M2M-RHYTHM/1.0.0",
+        "protocol": "M2M-RHYTHM/1.0.1",
         "fixtures": fixtures,
     }, indent=1) + "\n")
 

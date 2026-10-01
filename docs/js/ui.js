@@ -1,7 +1,7 @@
 // ui.js — DOM wiring. State lives here (blocks array + engine slots);
 // state.js handles URL/localStorage; engine.js handles audio + placement.
 
-import { derivePattern, PROTOCOL_VERSION } from "./protocol.js";
+import { derivePattern, PROTOCOL_ID, PROTOCOL_VERSION } from "./protocol.js";
 import { fetchTip, fetchByHeight } from "./api.js";
 import { downloadMidi } from "./smf.js";
 import { Ensemble, MAX_BLOCKS, SLOT_INSTRUMENTS } from "./engine.js";
@@ -347,6 +347,8 @@ async function bootFresh() {
 }
 
 (async function boot() {
+  const tag = document.getElementById("protocolTag");
+  if (tag) tag.textContent = `${PROTOCOL_ID} v${PROTOCOL_VERSION} · bitcoin merkle roots → rhythm`;
   const st = session.load();
   if (st) await bootRestored(st); else await bootFresh();
   render();

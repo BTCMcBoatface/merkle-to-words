@@ -176,10 +176,16 @@ def leaf_to_duration(leaf_hex: str) -> Tuple[str, int]:
 # ── Pitch extraction ─────────────────────────────────────────────────────────
 
 def leaf_to_pitch_byte(leaf_hex: str) -> int:
+    # M2M-NOTES Open Point 1, resolved (fix): TRUE disjoint bits 11-18.
+    #   leaf[1] & 0x1F  = global bits 11-15 (5 bits)
+    #   leaf[2] >> 5    = global bits 16-18 (3 bits)
+    # Pre-fix formula was ((leaf[0] & 0x07) << 5) | (leaf[1] >> 3) = global bits
+    # 5-12, overlapping the duration index (bits 0-10) and correlating melody
+    # with rhythm. Old notes-midi/ files predate this fix (regeneration deferred).
     leaf_bytes = bytes.fromhex(leaf_hex)
-    first_byte = leaf_bytes[0]
     second_byte = leaf_bytes[1]
-    bits_11_to_18 = ((first_byte & 0x07) << 5) | (second_byte >> 3)
+    third_byte = leaf_bytes[2]
+    bits_11_to_18 = ((second_byte & 0x1F) << 3) | (third_byte >> 5)
     return bits_11_to_18
 
 
