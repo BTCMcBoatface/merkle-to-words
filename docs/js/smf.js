@@ -89,6 +89,67 @@ export function midiFileName(rootHex, height = null) {
   return height != null ? `${height}_merkle_${prefix}.mid` : `merkle_${prefix}.mid`;
 }
 
+// ── M2M-NOTES draft §6: mapped export ──
+// Same timing container as the canonical file; channel 0, one program_change 0
+// after tempo, per-event pitches (21–108). Running status like mido.
+export function writeMappedMidiBytes(notes, pitches) {
+  const track = [];
+  let lastStatus = -1;
+  const pushEvent = (delta, status, d1, d2) => {
+    track.push(...vlq(delta));
+    if (status !== lastStatus) track.push(status);
+    lastStatus = status;
+    track.push(d1, d2);
+  };
+
+  track.push(0x00, 0xff, 0x51, 0x03,
+    (MICROSECONDS_PER_BEAT >> 16) & 0xff,
+    (MICROSECONDS_PER_BEAT >> 8) & 0xff,
+    MICROSECONDS_PER_BEAT & 0xff);
+  track.push(0x00, 0xc0, 0x00); // program_change ch0 prog0 (OP4: fixed)
+  lastStatus = -1; // program change is its own status; note events carry theirs
+
+  for (let i = 0; i < notes.length; i++) {
+    const { sounding, gap } = dutySplit(notes[i].ticks);
+    const key = pitches[i] | 0;
+    pushEvent(0, 0x90, key, NOTE_VELOCITY);
+    pushEvent(sounding, 0x80, key, 0x00);
+    if (gap > 0) pushEvent(gap, 0x80, key, 0x00);
+  }
+
+  track.push(0x00, 0xff, 0x2f, 0x00);
+
+  const header = [
+    ...ascii("MThd"), ...u32(6),
+    ...u16(1), ...u16(1), ...u16(TICKS_PER_QUARTER),
+  ];
+  const out = new Uint8Array(header.length + 8 + track.length);
+  out.set(header);
+  let p = header.length;
+  out.set(ascii("MTrk"), p); p += 4;
+  out.set(u32(track.length), p); p += 4;
+  out.set(track, p);
+  return out;
+}
+
+export function mappedMidiFileName(rootHex, height = null) {
+  const prefix = rootHex.slice(0, 8);
+  return height != null ? `${height}_merkle_${prefix}_notes.mid` : `merkle_${prefix}_notes.mid`;
+}
+
+export function downloadMidiMapped(notes, pitches, rootHex, height = null) {
+  const bytes = writeMappedMidiBytes(notes, pitches);
+  const blob = new Blob([bytes], { type: "audio/midi" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = mappedMidiFileName(rootHex, height);
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
 export function downloadMidi(notes, rootHex, height = null) {
   const bytes = writeMidiBytes(notes);
   const blob = new Blob([bytes], { type: "audio/midi" });

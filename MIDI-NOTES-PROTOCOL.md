@@ -1,12 +1,12 @@
-# M2M-NOTES Protocol — v0.1.0-DRAFT
+# M2M-NOTES Protocol — v1.0.0
 
 **The pitched layer: deterministic merkle melodies, the shoehorn pitch map, and mapped MIDI export.**
 
 | | |
 |---|---|
 | Protocol ID | `M2M-NOTES` |
-| Version | `0.2.0-DRAFT` — not frozen; **Open Point 1 resolved** (fix), OP2–4 open |
-| Depends on | `M2M-RHYTHM v1.0.1` (§2–§9 consumed verbatim: same root → same rhythm, always) |
+| Version | `1.0.0` — **FROZEN** (Oct 1: melodic fixtures + paint UI round-trip passed; JS ≡ Python over 98 checks) |
+| Depends on | `M2M-RHYTHM v1.0.2` (§2–§9 consumed verbatim: same root → same rhythm, always) |
 | Fulfills | `MIDI-PROTOCOL.md` Appendix A reservation |
 | Purpose | Assigns meaning to previously *reserved* bits (root 2–15, leaf 11–18), defines the shoehorn map format, and specifies `.mid` exports with pitches |
 | Explicitly NOT covered | Player UI, live-mode rotation/polling (render/product layer in `PROJECT.md`), synth voices |
@@ -97,15 +97,19 @@ script @ `5b59f81`; pitch extraction subsequently fixed to the disjoint bits per
 A user-owned mapping from **time to pitch**, independent of instruments and blocks:
 
 - **Grid:** the 8-bar reference cycle (`cycleTicks = 15360`), quantized to **eighths**
-  → **64 cells of 600 ticks**. (OPEN POINT 2: 16th resolution option = 128 cells /
-  300 ticks — format-ready by changing `cellTicks` only.)
+  → **64 cells of 600 ticks**. Locked for v1 (OP2 resolved: eighths only; a 16th grid
+  would be format-compatible by changing `cellTicks` alone — future MINOR).
 - **Cell value:** MIDI note 21–108, or empty.
 - **Onset pitch:** event with master tick `t` (anchor=0 convention) reads cell
   `floor((t mod 15360) / cellTicks)`. Pitched at onset; sustained events do not
   re-pitch mid-note.
-- **Empty cell fall-through** (OPEN POINT 3):
-  1. MERKLE source available (event's block is known) → deterministic pitch from §3;
-  2. else → the voice's default note (player seam already exists).
+- **Empty-cell resolution — melody-source switch** (OP3 resolved by owner refinement):
+  the player carries a per-session switch `source ∈ {merkle, none}`:
+  1. `source = merkle` → empty-cell onsets take the **owning block's deterministic
+     pitch from §3** (painted cells still override);
+  2. `source = none` → empty-cell onsets take the **voice's default note**.
+  "Fill" (§5) is the act of materializing source (1) into cells as a starting sketch —
+  it does not change what the switch means.
 - **Per-slot transpose applies AFTER the map** (melodic slots only — percussion
   never pitched, per the standing ruling), then clamps to 21–108.
 - Parts with loops shorter than 8 bars read the same global grid at their phase —
@@ -126,8 +130,8 @@ Container per rhythm §10 (format 1, single track, division 480, identical tempo
 identical delta sequence — timing is byte-identical to the canonical drum file), with:
 
 - `note_on`/`note_off` on **channel 0**, key = §3/§4 pitch (source-labeled), velocity 80;
-- one `program_change` after tempo, program = export preset (OPEN POINT 4: fixed 0
-  for v1 vs. GM-per-slot choice list — recommend fixed 0);
+- one `program_change` after tempo, **program 0** (OP4 resolved: fixed Acoustic Grand —
+  the file is a melody sketch; users pick sounds in their DAW);
 - filename: canonical rhythm files keep §10 names; mapped exports use
   `{height}_merkle_{prefix8}_notes.mid`, or `…_shoehorn_{mapid}.mid` where
   `mapid` = first 4 hex of SHA-256 over the map payload (§7) — provenance without
@@ -141,26 +145,36 @@ identical delta sequence — timing is byte-identical to the canonical drum file
 values 21–108 in practice). Omitted when untouched. A map in a shared URL restores the
 melody arrangement exactly — pitch is now part of a session's identity.
 
-## 8. Verification pattern (planned)
+## 8. Verification (done at freeze)
 
-Same as rhythm: `make-fixtures.py` gains a NOTES section (deterministic melodies over
-the existing 6 roots; shoehorn grid cases incl. fall-through
-and transpose stack), `tests/verify.mjs` asserts Python ≡ JS.
+`make-fixtures.py` carries a NOTES section: scale params, pitchBytes, melody32 over all
+6 roots + mapped-SMF byte reference for the wrapped root; `tests/verify.mjs` asserts
+Python ≡ JS — **PASS, 98 checks** at freeze time.
 
-## 9. Freeze checklist (0.x → 1.0.0)
+## 9. Freeze record (0.3.0-DRAFT → 1.0.0, Oct 1)
 
 - [x] Open Point 1 decided — **fix (Option A), Sep 30 owner ruling**; doc pins disjoint bits 11–18
-- [ ] Open Points 2–4 decided (resolution option, fall-through default, program)
+- [x] Open Point 2 decided — eighths only (64 × 600 ticks); 16ths deferred as format-compatible option
+- [x] Open Point 3 decided — melody-**source switch** (`merkle | none`) resolves empty cells; painted cells override in both modes
+- [x] Open Point 4 decided — mapped export uses fixed program 0, channel 0
 - [x] `notes-from-merkle.py` patched to match and cross-checked (PB ⟂ duration proven; rhythm identical between scripts on all 6 fixture roots)
-- [ ] Melodic fixtures + verify.mjs extension passing
-- [ ] Player paint UI exists and round-trips through `&p=`
+- [x] Melodic fixtures + verify.mjs extension passing (98/98)
+- [x] Player paint UI exists and round-trips through `&p=` (map panel + state round-trip verified)
 
-*Draft stance notes: everything marked OPEN is a real question, not an oversight.
-The two design calls you already made that shaped this doc: shoehorn is
-instrument-independent (one global map), and percussion never receives pitch.*
+*Freeze stance notes: the two design calls that shaped this doc before drafting:
+shoehorn is instrument-independent (one global map), and percussion never receives
+pitch. Future changes follow §1 governance (MAJOR = output change, MINOR = additive,
+PATCH = editorial).*
 
 ## Changelog
 
+- `1.0.0` — **Freeze.** All OP rulings in, both gates green. Pitched-layer derivation
+  is now immutable under `1.x`.
+
+- `0.3.0-DRAFT` — OP2–OP4 ruled by owner (Sep 30/Oct 1): eighths-only grid; empty-cell
+  resolution becomes an explicit **melody-source switch** (`merkle | none`) rather than
+  a fixed fallback chain (owner refinement); exports pin program 0. Freeze now needs only
+  melodic fixtures + paint UI round-trip.
 - `0.2.0-DRAFT` — Open Point 1 resolved (owner ruling: fix). §2 pins disjoint bits
   11–18; `leaf_to_pitch_byte()` patched and verified (PB ⟂ duration; rhythm identical
   to `midi-from-merkle.py` on all 6 fixture roots; e2e notes file conformance).

@@ -2,15 +2,28 @@
 // localStorage mirrors it for convenience. Full merkle roots are stored so a
 // restored session derives locally with ZERO API calls.
 //
-//   ?v=1&b=<height>~<root64>,...&s=<blockIdx|->(x7)&m=ind|master
+//   ?v=1&b=<height>~<root64>,...&s=<blockIdx|->(x7)&m=ind|master[&t=..][&u=..][&p=..][&g=m]
 //
 // Blocks with unknown height (manual roots) use height "-".
+// &p = base64url of the 64 melody-map bytes (M2M-NOTES §7); &g = melody source.
 
 const LS_KEY = "m2m-rhyth…n-v1";
 const V = "1";
 const HEX64 = /^[0-9a-f]{64}$/;
 
-export function encode({ blocks, slots, mode, transpose, bpm }) {
+function b64uEncode(arr) {
+  let s = "";
+  for (const x of arr) s += String.fromCharCode(x);
+  return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+function b64uDecode(str) {
+  const raw = atob(str.replace(/-/g, "+").replace(/_/g, "/"));
+  const out = new Array(raw.length);
+  for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+  return out;
+}
+
+export function encode({ blocks, slots, mode, transpose, bpm, map, source }) {
   const b = blocks.map((k) => `${k.height ?? "-"}~${k.rootHex}`).join(",");
   const s = slots.map((i) => (i == null || i < 0 ? "-" : i)).join(",");
   const m = mode === "master" ? "master" : "ind";
@@ -19,6 +32,10 @@ export function encode({ blocks, slots, mode, transpose, bpm }) {
     q += `&t=${transpose.map((x) => Math.max(-24, Math.min(24, x | 0))).join(",")}`;
   }
   if (bpm && bpm !== 120) q += `&u=${Math.round(bpm)}`;
+  if (Array.isArray(map) && map.length === 64 && map.some((x) => x | 0)) {
+    q += `&p=${b64uEncode(map)}`;
+  }
+  if (source === "merkle") q += `&g=m`;
   return q;
 }
 
@@ -58,6 +75,14 @@ export function decode(search) {
     }
     const u = parseInt(q.get("u") || "120", 10);
     if (u >= 20 && u <= 300) view.bpm = u;
+    const pParam = q.get("p");
+    if (pParam) {
+      const cells = b64uDecode(pParam);
+      if (cells.length !== 64) return null;
+      // sanitize: 0 or a MIDI note 21–108, else 0
+      view.map = cells.map((v) => (v >= 21 && v <= 108 ? v : 0));
+    }
+    if (q.get("g") === "m") view.source = "merkle";
     return view;
   } catch (e) {
     return null; // malformed → fresh-session flow

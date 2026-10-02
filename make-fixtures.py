@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 make-fixtures.py — generate tests/fixtures.json: golden E(R) vectors derived
-from midi-from-merkle.py (the Python reference; M2M-RHYTHM v1.0.1,
+from midi-from-merkle.py (the Python reference; M2M-RHYTHM v1.0.2,
 derivation frozen at 1.0.0).
 
 These fixtures are the cross-language sync check: docs/js/protocol.js must
@@ -23,14 +23,15 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 
 
-def load_reference():
-    spec = importlib.util.spec_from_file_location("ref", HERE / "midi-from-merkle.py")
+def load_module(fname):
+    spec = importlib.util.spec_from_file_location(fname.replace(".py", "").replace("-", "_"), HERE / fname)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
 
 
-m = load_reference()
+m = load_module("midi-from-merkle.py")
+nm = load_module("notes-from-merkle.py")  # shares rhythm engine; adds pitch rules
 
 
 def derive(root_hex):
@@ -145,10 +146,41 @@ def main():
         if f["label"] == "wrapped-8bar":
             f["smfHex"] = smf_hex
 
+    # ── M2M-NOTES layer: deterministic melody + mapped-export reference ──
+    for f in fixtures:
+        lv = nm.derive_leaves(f["root"])
+        pbs = [nm.leaf_to_pitch_byte(l) for l in lv]        # disjoint bits 11-18
+        sp = nm.derive_scale_params(f["root"])
+        mel = [nm.scale_degree_to_midi(pb % sp["scale_size"], sp) for pb in pbs]
+        assert all(21 <= x <= 108 for x in mel), f"pitch out of range {f['label']}"
+        f["melody"] = {
+            "scale": {
+                "modeIndex": sp["mode_index"], "modeName": sp["mode_name"],
+                "rootNoteIndex": sp["root_note_index"], "rootNoteName": sp["root_note_name"],
+                "baseOctave": sp["base_octave"], "octaveRange": sp["octave_range"],
+                "scaleSize": sp["scale_size"],
+            },
+            "pitchBytes": pbs,
+            "melody32": mel,
+        }
+
+    # mapped SMF bytes (notes-pipeline generate_midi) for the wrapped root
+    wf = next(f for f in fixtures if f["label"] == "wrapped-8bar")
+    mel32 = wf["melody"]["melody32"]
+    notes4 = [(name, ticks, tr, mel32[i % 32])
+              for i, (name, ticks, tr) in
+              enumerate((n["name"], n["ticks"], n["truncated"]) for n in wf["notes"])]
+    with tempfile.TemporaryDirectory() as td:
+        p = Path(td) / "ref_notes.mid"
+        with contextlib.redirect_stdout(io.StringIO()):
+            nm.generate_midi(notes4, str(p))
+        wf["smfMappedHex"] = p.read_bytes().hex()
+
     out = HERE / "tests" / "fixtures.json"
     out.parent.mkdir(exist_ok=True)
     out.write_text(json.dumps({
-        "protocol": "M2M-RHYTHM/1.0.1",
+        "protocol": "M2M-RHYTHM/1.0.2",
+        "notesProtocol": "M2M-NOTES/1.0.0",
         "fixtures": fixtures,
     }, indent=1) + "\n")
 

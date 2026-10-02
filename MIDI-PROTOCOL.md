@@ -1,15 +1,15 @@
-# M2M-MIDI Protocol — v1.0.1
+# M2M-MIDI Protocol — v1.0.2
 
 **A normative specification for deriving a rhythmic MIDI pattern from a Bitcoin merkle root.**
 
 | | |
 |---|---|
 | Protocol ID | `M2M-RHYTHM` |
-| Version | `1.0.1` |
+| Version | `1.0.2` |
 | Status | Frozen (`1.0.x` is backwards-compatible forever) |
 | Derived from | `midi-from-merkle.py` in `btcmcboatface/merkle-to-words` (commit `5b59f81`) |
 | Reference status | `midi-from-merkle.py` **conforms** — §7.4 patch applied post-`5b59f81`; archived `.mid` files predate the patch. `notes-from-merkle.py` uses the same patched rhythm engine (see Appendix A) |
-| Intended consumers | Python reference tools; planned JavaScript / GitHub Pages implementations |
+| Intended consumers | Python reference tools; the JavaScript player in `docs/` (live) |
 | Scope | Drum-rhythm pipeline **only**. Pitched output is reserved for `M2M-NOTES` (Appendix A). |
 
 ---
@@ -388,9 +388,10 @@ space for it so rhythm v1 is never invalidated:
 - Channel 0 (melodic) replaces channel 9; key becomes note-dependent; a `program_change`
   opens the track.
 
-Status: **informative sketch only.** The concrete tables must be frozen as
-`M2M-NOTES v1.0.0` in its own document before a second implementation exists — same
-governance as §1. Until then no cross-language conformance is claimed for notes.
+Status: **superseded — frozen elsewhere.** `M2M-NOTES v1.0.0` (`MIDI-NOTES-PROTOCOL.md`,
+Oct 1) is the canon for the pitched layer: its §2–§3 pin the scale/pitch rules sketched
+above (with the OP1 fix: truly disjoint leaf bits 11–18), §4–§5 define the shoehorn map,
+§6 defines mapped exports. Cross-language conformance **is** claimed and fixture-checked.
 Rhythm only: `notes-from-merkle.py` shares the patched §7.4 engine (cyclic reuse,
 clean exact-fill stop) and derives pitch of a wrapped note from the same wrapped leaf
 (`degree[i mod 32]`), so notes-pattern rhythm is identical to rhythm v1 for any root.
@@ -420,3 +421,6 @@ clean exact-fill stop) and derives pitch of a wrapped note from the same wrapped
   wording updated from "future web repo" to the in-repo app. No rule change; derivation
   and event streams are byte-identical to `1.0.0` (fixture tags re-stamped;
   `node tests/verify.mjs` passes unchanged).
+- `1.0.2` — editorial only: Appendix A updated to point at the now-FROZEN
+  `M2M-NOTES v1.0.0` (`MIDI-NOTES-PROTOCOL.md`); header consumer line reflects the live
+  player. Rhythm rules §2–§10 untouched; fixtures re-verified (98 checks incl. NOTES).

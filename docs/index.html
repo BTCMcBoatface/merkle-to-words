@@ -15,6 +15,20 @@
 
   <main>
     <section id="slots" aria-label="Instrument slots"></section>
+
+    <section id="mapSection" aria-label="Melody map">
+      <h2>Melody map <span class="draft">M2M-NOTES v1</span>
+        <button id="srcBtn" class="btn mini">source: voice</button>
+      </h2>
+      <div id="palette"></div>
+      <div id="mapGrid"></div>
+      <div id="mapRow">
+        <select id="fillSelect" aria-label="block to fill from"></select>
+        <button id="fillBtn" class="btn">fill from block</button>
+        <button id="clearMapBtn" class="btn">clear map</button>
+      </div>
+    </section>
+
     <section id="shelfSection" aria-label="Block collection">
       <h2>Blocks <span class="count" id="blockCount"></span></h2>
       <div id="shelf"></div>
@@ -23,11 +37,17 @@
         <button id="fetchHeight" class="btn">fetch</button>
         <button id="fetchLatest" class="btn">get latest</button>
       </div>
+      <div id="snapRow">
+        <input id="snapName" type="text" placeholder="snapshot name" aria-label="snapshot name">
+        <button id="snapSave" class="btn">💾 save</button>
+        <div id="snapList"></div>
+      </div>
     </section>
   </main>
 
   <footer id="transport">
     <button id="playBtn" class="btn primary">▶ play</button>
+    <button id="liveBtn" class="btn" title="watch the chain: new blocks evict-oldest, place, and rotate the arrangement">◉ live</button>
     <label class="bpm"><input id="bpmInput" type="number" min="20" max="300" step="1" value="120" inputmode="numeric" aria-label="BPM">BPM</label>
     <button id="modeBtn" class="btn" title="loop alignment mode">bars</button>
     <button id="resyncBtn" class="btn" title="reset all parts to bar 0 at the next boundary">⟲ re-align</button>

@@ -10,12 +10,15 @@
 //     that commits at the next shared boundary so the ensemble retimes together.
 //     Render-time only — §5's 120 BPM and the .mid download are untouched.
 //   - Voice triggering carries pitch + per-slot transpose (melodic voices;
-//     percussion ignores it); future chord overlay lands on the same seam.
-//
-// Protocol: timing math in integer ticks (§8); seconds = ticks / 960 (§A5).
+//     percussion ignores it). The M2M-NOTES draft §4 melody map + §4 source
+//     switch resolve melodic pitches at schedule time; canonical files stay pure.
+//   - LIVE mode: rotation is a slot permutation moved with the parts themselves
+//     (cursor intact) — rotation NEVER re-times anything, only re-voices it.
+//     Arrival-driven rotation lives in ui.js; the engine owns the mechanism.
 
 import { BAR_TICKS, NOTE_VELOCITY } from "./protocol.js";
 import { getVoice, VOICES } from "./synth.js";
+import { GRID_TICKS, CELL_TICKS, foldMidi } from "./notes.js";
 
 const PPQ = 480; // §5 ticks per quarter
 const tpsFor = (bpm) => (bpm * PPQ) / 60; // ticks/sec = 960 at 120 BPM
@@ -32,6 +35,7 @@ export class Ensemble {
     this.bus = null;
     this.mode = "independent"; // 'independent' (bar quantum) | 'master' (cycle quantum)
     this.playing = false;
+    this.live = false;         // LIVE (conductor) mode armed (polling lives in ui.js)
     this.startTime = 0; // ctx time at master tick 0
     this._tpsBase = tpsFor(120); // current master ticks/sec (tempo lives in segments)
     this._segments = null; // [{tick0, time0, tps}] piecewise tick↔second map
@@ -42,6 +46,9 @@ export class Ensemble {
     this.slots = SLOT_INSTRUMENTS.map((voiceId) => ({
       voiceId, block: null, part: null, muted: false, transpose: 0,
     }));
+    // M2M-NOTES draft state (render-time; exports are an explicit separate action):
+    this.map = new Uint8Array(GRID_TICKS / CELL_TICKS); // 64 cells: 0 = empty, else MIDI note
+    this.melodySource = "none"; // 'merkle' | 'none' (OP3: source switch)
   }
 
   // ── change notifications ──
@@ -61,7 +68,7 @@ export class Ensemble {
     const s = this.slots[i];
     s.block = block;
     s.part = null;
-    if (this.playing && block && !s.muted) s.part = this._buildPart(block, headStart);
+    if (this.playing && block) s.part = this._buildPart(block, headStart);
     this.emit();
   }
   clearSlot(i) {
@@ -70,22 +77,64 @@ export class Ensemble {
     this.emit();
   }
   toggleMute(i) {
+    // pure flag: the part keeps its live cursor so unmute resumes in-phase
     const s = this.slots[i];
     s.muted = !s.muted;
-    if (this.playing) {
-      s.part = (!s.muted && s.block) ? this._buildPart(s.block, false) : null;
-    }
     this.emit();
   }
-  // Future transpose/chord overlay lands here (semitone offset for melodic voices).
   setTranspose(i, semitones) {
-    this.slots[i].transpose = semitones | 0;
+    this.slots[i].transpose = Math.max(-24, Math.min(24, semitones | 0));
     this.emit();
   }
   setMode(m) {
     this.mode = m === "master" ? "master" : "independent";
     if (this.playing && this.mode === "master") this.resyncAllToTop();
     this.emit();
+  }
+  setLive(on) {
+    this.live = !!on;
+    this.emit();
+  }
+
+  // Rotate the arrangement one round-robin step: block at slot i travels to slot
+  // i+1, PART OBJECTS MOVE WITH THEM — timing (anchor/entry/cursor) is untouched,
+  // only the sounding voice changes. Mutes/transposes stay with the instrument.
+  rotateOneStep() {
+    const n = this.slots.length;
+    const prev = this.slots.map((s) => ({ block: s.block, part: s.part }));
+    for (let i = 0; i < n; i++) {
+      const src = prev[(i - 1 + n) % n];
+      this.slots[i].block = src.block;
+      this.slots[i].part = src.part;
+    }
+    this.emit();
+  }
+
+  // ── melody map + source (M2M-NOTES draft §4; player-side) ──
+  setMap(arr) {
+    if (arr && arr.length === this.map.length) {
+      for (let i = 0; i < arr.length; i++) {
+        const v = arr[i] | 0;
+        this.map[i] = (v >= 21 && v <= 108) ? v : 0;
+      }
+    }
+    this.emit();
+  }
+  clearMap() { this.map.fill(0); this.emit(); }
+  setMelodySource(s) {
+    this.melodySource = s === "merkle" ? "merkle" : "none";
+    this.emit();
+  }
+  // resolve a melodic onset's pitch: painted cell → source-merkle melody → voice default
+  _pitchFor(absTick, part, evIdx, voice, slot) {
+    const cell = Math.floor((absTick % GRID_TICKS) / CELL_TICKS);
+    const painted = this.map[cell];
+    let base;
+    if (painted) base = painted;
+    else if (this.melodySource === "merkle" && part.block && part.block.melody)
+      base = part.block.melody[evIdx % part.block.melody.length];
+    else base = voice.defaultNote;
+    return foldMidi(base + (slot.transpose | 0));
   }
 
   // ── tempo (player-only; the derived stream and .mid download always
@@ -142,7 +191,7 @@ export class Ensemble {
     const entry = this.playing ? this._nextBoundary() : 0;
     const loop = p.loopTicks;
     return {
-      onsets: p.onsets, loop,
+      block, onsets: p.onsets, loop,
       anchor: headStart ? entry : 0, // parameterized phase policy
       entry,
       cursor: { rep: Math.max(0, Math.floor(entry / loop)), idx: 0 },
@@ -166,7 +215,7 @@ export class Ensemble {
     this._pending = null;
     this._cycleIdx = 0;
     for (const s of this.slots) {
-      s.part = (s.block && !s.muted) ? this._buildPart(s.block, false) : null;
+      s.part = s.block ? this._buildPart(s.block, false) : null;
     }
     this.playing = true;
     this.timer = setInterval(() => this._schedule(), SCHED_INTERVAL_MS);
@@ -228,17 +277,19 @@ export class Ensemble {
 
     for (const s of this.slots) {
       const p = s.part;
-      if (!p) continue;
+      if (!p || s.muted) continue; // cursor freeze-through; catches up on unmute
       const voice = getVoice(s.voiceId);
-      const midi = voice.melodic ? (voice.defaultNote + s.transpose) : 0;
       for (;;) {
-        const o = p.onsets[p.cursor.idx];
+        const evIdx = p.cursor.idx;
+        const o = p.onsets[evIdx];
         const abs = p.anchor + p.cursor.rep * p.loop + o.tick;
         if (abs >= horizon) break;
         // audible window: after entry gate, and not stale (tab throttle guard)
         if (abs >= p.entry && abs >= cur - 2) {
           const at = Math.max(this._timeAt(abs), now + 0.004);
-          voice.trigger(ctx, this.bus, at, o.soundingTicks / this._tpsBase, NOTE_VELOCITY, midi);
+          const dur = o.soundingTicks / this._tpsBase;
+          const midi = voice.melodic ? this._pitchFor(abs, p, evIdx, voice, s) : 0;
+          voice.trigger(ctx, this.bus, at, dur, NOTE_VELOCITY, midi);
         }
         if (++p.cursor.idx >= p.onsets.length) { p.cursor.idx = 0; p.cursor.rep++; }
       }
