@@ -62,6 +62,10 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: var
   background: none; border: 1px solid var(--line); color: var(--dim); border-radius: 8px;
   padding: 2px 8px; font-size: 11px; cursor: pointer;
 }
+.block-card .assign {
+  width: 100%; margin-top: 6px; background: var(--card2); border: 1.5px solid var(--line);
+  color: var(--accent); border-radius: 8px; font-size: 12px; padding: 4px 6px;
+}
 #shelf .hint { color: var(--dim); font-size: 12px; font-style: italic; padding: 8px 2px; }
 
 #fetchRow { display: flex; gap: 8px; margin-top: 12px; }
@@ -107,6 +111,7 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: var
 .btn:active { transform: scale(0.97); }
 .btn.primary { background: var(--accent); color: #06202e; border-color: var(--accent); font-weight: 700; }
 .btn.danger { color: var(--danger); border-color: #3a2530; }
+#resetBtn.armed { background: var(--danger); border-color: var(--danger); color: #1c0a10; font-weight: 700; }
 .btn:disabled { opacity: 0.5; cursor: default; }
 
 @media (max-width: 420px) {

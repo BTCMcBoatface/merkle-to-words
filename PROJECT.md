@@ -28,7 +28,7 @@ Three pillars:
 | Protocols | Rhythm `M2M-RHYTHM/1.0.2` **frozen** (1.0.1/1.0.2 editorial; derivation unchanged since 1.0.0). Pitched `M2M-NOTES/2.0.0` **frozen Oct 1** — same-day MAJOR amendment after interaction review (piano-roll map with own length 4/8/16 bars, looping synced across instruments; mono default + chord stacks ≤7; drag-paint brush; v1.0.0 superseded). Golden-vector doc amendment still deferred; fixtures live in `tests/`. |
 | Python reference | **Conforms** — §7.4 cyclic reuse + exact-fill stop, both scripts; disjoint bits 11–18 pitch fix (OP1); validated over 240 synthetic roots. |
 | JS derivation + SMF writers | **Conforms** — `node tests/verify.mjs` PASS 98/98 (rhythm + NOTES: melody32, scale params, pitchBytes, mapped-SMF bytes); canonical downloads byte-identical to mido. |
-| Player features shipped | blocks-on-request (tip/height), 7 slots + shelf (max 8), drag & tap-move, mute, independent/master loop modes, ⟲ re-align, session URL+localStorage, per-block `.mid` download, transpose ±1/±12 (melodic only), BPM box 20–300 (boundary commit), **LIVE mode** (60 s poll, evict-oldest, arrival-driven rotation), **snapshots** (named, localStorage, 20-cap), **melody map piano roll** (drag-paint brush, own 4/8/16-bar looping length synced across instruments, mono default + chord stacks ≤7, octave shifter, merkle-fill, mapped export ⤓) |
+| Player features shipped | **app v1.1.0** (versioned via `docs/js/version.js`, header + snapshots): blocks-on-request (tip/height, shelf-by-default), 7 slots + shelf (max 8), drag & tap-move, **assign dropdown per block (evict-to-shelf)**, mute, independent/master loop modes, ⟲ re-align, session URL+localStorage, per-block `.mid` download, transpose ±1/±12 (melodic only), BPM box 20–300 (boundary commit), LIVE mode (60 s poll, evict-oldest, arrival-driven rotation), snapshots (cap 20), melody map piano roll (drag-paint, 4/8/16-bar looping, mono/chords ≤7, merkle-fill, mapped export ⤓), **two-click CLEAR** |
 | Needs eyes/ears | Human browser pass never done — phone (iOS audio unlock, tap-to-move, live/paint ergonomics) + desktop |
 | Pages deploy | Repo public; serve from `main` → `/docs` |
 | `midi-files/`, `notes-midi/` archives | Pre-patch patterns; regeneration **deliberately deferred** |
@@ -80,6 +80,10 @@ Three pillars:
 | Build order: live → shoehorn → fill/freeze | Live+snapshots are spec-independent and immediate payoff; paint unlocks the freeze checklist; fill is the last spec-consumer |
 | M2M-NOTES 1.0.0 freeze (Oct 1) | Both published gates green (melodic fixtures 98/98; paint round-trip). Rhythm doc → 1.0.2 editorial (Appendix A superseded by pointer). Pitched derivation immutable under 1.x from here |
 | M2M-NOTES 2.0.0 — same-day MAJOR amendment (Oct 1) | Interaction review found the v1 fixed 8-bar-cycle grid wrong: map must be a piano roll (time→, pitch↑↓) with its OWN selectable length (4/8/16 bars, default 4), looping in sync across all instruments ("no block owns a melody"), mono default with optional ≤7-pitch chord stacks per column, drag-painted brush (mousedown paints, held stroke covers, no palette — cells take their row's pitch). Output-affecting ⇒ MAJOR per §1. No external users existed; the bump is honest, not convenient. Lesson logged: interaction-review brand-new UIs before freezing |
+| No auto-assign outside LIVE (Oct 1, BUILT v1.1.0) | Blocks join the shelf and are placed by hand. Only two exceptions: first-load demo (tip → Bass Drum once) and LIVE arrivals (auto-place + rotation, mechanically necessary). Manual get-latest/fetch-height land shelf-only with a status hint |
+| Reassign = evict-to-shelf, not swap (Oct 1) | Owner ruling: moving block A onto occupied B sends B to the shelf (stays in collection). Deterministic, never double-books an instrument |
+| ✕ is Clear, two-click armed (Oct 1) | Owner reframing: "clear" not "reset" — stops transport, disarms LIVE, returns every block to the shelf; collection, map, tempo, transposes survive; no refetch, no demo. Second click within 3.5 s required ("clear?") |
+| App versioning convention (Oct 1) | `docs/js/version.js` single source, shown in header tag, stamped into snapshots. 1.0.0 = first ensemble build (retroactive); 1.1.0 = this feature round. MAJOR breaks session/export semantics, MINOR adds features, PATCH fixes |
 
 ## 5. Roadmap
 
@@ -121,6 +125,12 @@ Three pillars:
       superseded pointer).
 
 ### Next features — discuss when ready
+- [x] **Shelf-by-default + assign dropdown + clear (BUILT v1.1.0)** — manual fetches
+      land on the shelf; every block card carries a ▾ dropdown (shelf / any instrument);
+      occupied targets EVICT to the shelf (owner ruling — no swap). ✕ became a two-click
+      armed CLEAR: unassign everything to the shelf, keep collection + map + tempo,
+      stop transport, disarm LIVE; no refetch/demo. First-load demo and LIVE auto-place
+      remain the only automatic assignments (owner ruling). Snapshots stamp appVersion.
 - [ ] More instruments beyond the seven (user: "we can add more later").
 - [ ] Re-voicing: per-slot instrument dropdown vs today's fixed 7 slots.
 - [ ] Optional 808 tuning knobs (kick pitch/body, snare tone) — sound design, not transpose.

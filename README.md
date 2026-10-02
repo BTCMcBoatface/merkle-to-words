@@ -69,9 +69,10 @@ The full cross-language specification for this pipeline is [`MIDI-PROTOCOL.md`](
 
 ## Web player (merkle ensemble)
 
-A browser-based ensemble player lives in [`docs/`](docs/) and is served by GitHub Pages: it derives the same rhythm patterns in JavaScript, fetches Bitcoin blocks on request (latest tip, or any block height — old blocks welcome), and plays up to 8 blocks across 7 instrument slots (bass drum, snare, closed/open hi-hat, lead, bass, organ) synthesized live with Web Audio in an 808-flavored style. Dark mode, mobile-first, no build step, no dependencies.
+A browser-based ensemble player lives in [`docs/`](docs/) and is served by GitHub Pages: it derives the same rhythm patterns in JavaScript, fetches Bitcoin blocks on request (latest tip, or any block height — old blocks welcome), and plays up to 8 blocks across 7 instrument slots (bass drum, snare, closed/open hi-hat, lead, bass, organ) synthesized live with Web Audio in an 808-flavored style. Dark mode, mobile-first, no build step, no dependencies. Player version shown in the header tag (`docs/js/version.js`).
 
-- **Slots are the instruments** — drop a block into a slot permanently to re-voice it; one block per slot; spare blocks park on the shelf.
+- **Shelf first, assign by choice** — fetched blocks land on the shelf, never auto-assigned (the lone demo exception is a true first load; LIVE mode auto-places as its whole point). Re-assign any block to any instrument or back to the shelf with its ▾ dropdown — no dragging needed, and a displaced block is evicted to the shelf. Dragging works too.
+- **✕ is a clear, not a reset** — two clicks stops everything and returns all blocks to the shelf; your collection, melody map, and tempo survive.
 - **Everything syncs** — all parts start at tick 0 on transport start; loops are 1, 2, 4, or 8 bars, so the ensemble re-converges on the bar grid (toggle: independent bars / 8-bar master cycle with auto re-align; a ⟲ re-align button resets all parts to bar 0).
 - **Session sharing** — the arrangement (block heights + full merkle roots + slot map) lives in the page URL and localStorage; copy-link to share, and reloads re-derive offline-style (no API needed).
 - **Downloads** — any block's pattern downloads as a protocol-conformant `.mid` (byte-identical to the Python reference output) for use in other DAWs.

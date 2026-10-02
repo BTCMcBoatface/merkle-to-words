@@ -8,6 +8,7 @@ import { fetchTip, fetchByHeight } from "./api.js";
 import { downloadMidi, downloadMidiMapped } from "./smf.js";
 import { Ensemble, MAX_BLOCKS } from "./engine.js";
 import { getVoice } from "./synth.js";
+import { APP_VERSION } from "./version.js";
 import * as session from "./state.js";
 
 const LIVE_POLL_MS = 60000;
@@ -89,10 +90,26 @@ function removeBlock(b) {
   persist(); render();
 }
 
-// move = the ONE block-per-slot rule; any manual placement exits LIVE
+// shelf-by-default: manual fetches land on the shelf, never auto-assigned
+// (LIVE arrivals and the first-load demo are the only auto-placements).
+function shelfOnly(b) {
+  setStatus(`#${b.height ?? "?"} on the shelf — assign via the block's ▾ menu or drag`);
+  persist(); render();
+}
+
+// move = the ONE block-per-slot rule; any manual placement exits LIVE.
+// slotIdx < 0 = send to shelf. Destination slot occupied? setSlot overwrite IS the
+// evict-to-shelf ruling: the displaced block simply loses its slot, stays in the
+// collection, appears on the shelf.
 function placeBlock(block, slotIdx, { headStart = false } = {}) {
   disarmLive();
   const prev = slotIndexOf(block);
+  if (slotIdx < 0) {
+    if (prev >= 0) engine.clearSlot(prev);
+    selected = null;
+    persist(); render();
+    return;
+  }
   if (prev >= 0 && prev !== slotIdx) engine.clearSlot(prev);
   engine.setSlot(slotIdx, block, { headStart });
   selected = null;
@@ -331,7 +348,7 @@ function saveSnaps(list) { try { localStorage.setItem(SNAP_KEY, JSON.stringify(l
 $("#snapSave").addEventListener("click", () => {
   const name = $("#snapName").value.trim() || `arr ${new Date().toLocaleTimeString()}`;
   const list = loadSnaps();
-  list.push({ name, ts: Date.now(), state: view() });
+  list.push({ name, ts: Date.now(), appVersion: APP_VERSION, state: view() });
   saveSnaps(list.slice(-20)); // cap 20 snapshots
   $("#snapName").value = "";
   setStatus(`snapshot "${name}" saved`);
@@ -500,6 +517,23 @@ function render() {
     rm.addEventListener("click", (e) => { e.stopPropagation(); removeBlock(b); });
     row.appendChild(rm);
     card.appendChild(row);
+
+    // assign dropdown: re-assign anywhere without dragging (shelf-by-default UX).
+    // Moving onto an occupied instrument evicts that occupant to the shelf.
+    const asg = document.createElement("select");
+    asg.className = "assign";
+    asg.title = "assign / re-assign — a displaced block goes to the shelf";
+    const mkOpt = (v, label) => {
+      const o = document.createElement("option");
+      o.value = String(v); o.textContent = label;
+      asg.appendChild(o);
+    };
+    mkOpt(-1, "▾ shelf (unassigned)");
+    engine.slots.forEach((s, si) => mkOpt(si, getVoice(s.voiceId).label));
+    asg.value = String(inSlot);
+    asg.addEventListener("click", (e) => e.stopPropagation());
+    asg.addEventListener("change", () => placeBlock(b, parseInt(asg.value, 10)));
+    card.appendChild(asg);
     shelfEl.appendChild(card);
   });
 
@@ -571,39 +605,45 @@ $("#copyBtn").addEventListener("click", async () => {
   try { await navigator.clipboard.writeText(url); setStatus("session link copied"); }
   catch (e) { setStatus(url); }
 });
-$("#resetBtn").addEventListener("click", () => {
+let clearArmed = false, clearTimer = null;
+const resetBtn = $("#resetBtn");
+function disarmClear() {
+  clearArmed = false;
+  if (clearTimer) { clearTimeout(clearTimer); clearTimer = null; }
+  resetBtn.textContent = "✕"; resetBtn.classList.remove("armed");
+}
+resetBtn.addEventListener("click", () => {
+  if (!clearArmed) {                       // two-click confirm: clear ≠ reset
+    clearArmed = true;
+    resetBtn.textContent = "clear?"; resetBtn.classList.add("armed");
+    clearTimer = setTimeout(disarmClear, 3500);
+    return;
+  }
+  disarmClear();
+  // CLEAR: unassign every block to the shelf; collection, map, tempo, transpose
+  // all survive. No fetch, no demo (that is first-load only), LIVE disarmed.
   engine.stop();
   disarmLive(true);
-  blocks = []; selected = null;
   engine.slots.forEach((s, i) => engine.clearSlot(i));
-  engine.clearMap();
-  engine.setMapBars(4);
-  engine.setPolyphony(false);
-  engine.setMelodySource("none");
-  octShift = 0;
-  try { localStorage.removeItem("m2m-rhythm-session-v1"); } catch (e) { }
-  history.replaceState(null, "", location.pathname);
-  bootFresh();
+  selected = null;
+  persist(); render();
+  setStatus("cleared — all blocks returned to the shelf");
 });
 $("#fetchLatest").addEventListener("click", async () => {
-  try { const tip = await fetchTip(); const b = await addBlock(tip); if (b) autoPlace(b); }
+  try { const tip = await fetchTip(); const b = await addBlock(tip); if (b) shelfOnly(b); }
   catch (e) { setStatus(String(e.message || e), true); }
   render();
 });
 $("#fetchHeight").addEventListener("click", async () => {
   const v = $("#heightInput").value;
   if (!v.trim()) { setStatus("enter a block height first", true); return; }
-  try { const blk = await fetchByHeight(v); const b = await addBlock(blk); if (b) autoPlace(b); }
+  try { const blk = await fetchByHeight(v); const b = await addBlock(blk); if (b) shelfOnly(b); }
   catch (e) { setStatus(String(e.message || e), true); }
   render();
 });
 $("#heightInput").addEventListener("keydown", (e) => { if (e.key === "Enter") $("#fetchHeight").click(); });
 
-function autoPlace(b) {
-  const i = firstEmptySlot();
-  if (i >= 0) placeBlock(b, i);
-  else { persist(); render(); } // shelf-parked
-}
+// first-load demo is the ONE auto-assign outside LIVE (owner ruling)
 
 // ── boot / session apply ──
 async function applySessionAsync(st) {
@@ -651,7 +691,7 @@ async function bootFresh() {
 
 (async function boot() {
   const tag = document.getElementById("protocolTag");
-  if (tag) tag.textContent = `${PROTOCOL_ID} v${PROTOCOL_VERSION} · bitcoin merkle roots → rhythm · +M2M-NOTES v2.0.0`;
+  if (tag) tag.textContent = `${PROTOCOL_ID} v${PROTOCOL_VERSION} · bitcoin merkle roots → rhythm · +M2M-NOTES v2.0.0 · player v${APP_VERSION}`;
   const st = session.load();
   if (st) await applySessionAsync(st); else await bootFresh();
   wireMapCanvas();
