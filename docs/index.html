@@ -20,11 +20,20 @@
       <h2>Melody map <span class="draft">M2M-NOTES v2</span></h2>
       <div id="mapBar">
         <span class="seg" id="barsSeg">
-          <button data-bars="4" class="btn mini">4 bars</button>
+          <button data-bars="1" class="btn mini">1</button>
+          <button data-bars="2" class="btn mini">2</button>
+          <button data-bars="4" class="btn mini sel">4</button>
           <button data-bars="8" class="btn mini">8</button>
           <button data-bars="16" class="btn mini">16</button>
+          <span class="seglbl">bars</span>
         </span>
         <label class="chk"><input type="checkbox" id="polyChk"> chords (≤7/column)</label>
+        <span class="seg">
+          <button id="keyDown" class="btn mini" title="transpose the whole map down a semitone (painted values untouched)">−1</button>
+          <span id="keyLbl" class="keycap">±0</span>
+          <button id="keyUp" class="btn mini" title="transpose the whole map up a semitone (painted values untouched)">+1</button>
+        </span>
+        <button id="foldBtn" class="btn mini" title="fold out sharps: natural rows only (painted sharps show as notch markers)">♯ fold</button>
         <span class="seg">
           <button id="octDown" class="btn mini">◀ 8vb</button>
           <button id="octUp" class="btn mini">8vb ▶</button>

@@ -133,9 +133,12 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: var
 .btn.mini { font-size: 11px; padding: 3px 8px; vertical-align: middle; }
 .btn.mini.on { border-color: var(--accent2); color: var(--accent2); }
 .btn.mini.sel { border-color: var(--accent); color: var(--accent); background: var(--card2); }
+.seglbl { font-size: 10px; color: var(--dim); align-self: center; }
+.keycap { font-size: 11px; color: var(--accent2); align-self: center; min-width: 26px; text-align: center; font-variant-numeric: tabular-nums; }
 #mapBar { display: flex; gap: 8px; margin: 4px 0 8px; flex-wrap: wrap; align-items: center; }
-#mapBar .seg { display: flex; gap: 4px; }
+#mapBar .seg { display: flex; gap: 4px; align-items: center; }
 #mapBar .chk { font-size: 11px; color: var(--dim); display: flex; align-items: center; gap: 4px; }
+.keycap { color: var(--accent); font-size: 11px; min-width: 26px; text-align: center; }
 #mapWrap { overflow-x: auto; border: 1.5px solid var(--line); border-radius: 10px; background: #12141b; }
 #mapCanvas { display: block; touch-action: none; cursor: crosshair; }
 

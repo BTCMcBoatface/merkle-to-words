@@ -180,7 +180,7 @@ def main():
     out.parent.mkdir(exist_ok=True)
     out.write_text(json.dumps({
         "protocol": "M2M-RHYTHM/1.0.2",
-        "notesProtocol": "M2M-NOTES/2.0.0",
+        "notesProtocol": "M2M-NOTES/2.1.0",
         "fixtures": fixtures,
     }, indent=1) + "\n")
 

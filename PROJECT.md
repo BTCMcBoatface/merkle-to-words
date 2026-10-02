@@ -13,7 +13,7 @@ Python tools, downloadable as
 Three pillars:
 
 - **Protocol** — `MIDI-PROTOCOL.md` (`M2M-RHYTHM/1.0.2`) + `MIDI-NOTES-PROTOCOL.md`
-  (`M2M-NOTES/2.0.0`). The contract. Neither implementation is authoritative;
+  (`M2M-NOTES/2.1.0`). The contract. Neither implementation is authoritative;
   disagreements are bugs; changes are amendments.
 - **Reference tools** — `midi-from-merkle.py` (drums), `notes-from-merkle.py`
   (pitched sketch), `words-from-merkle.py`; cross-language verification via
@@ -25,10 +25,10 @@ Three pillars:
 
 | Area | State |
 |---|---|
-| Protocols | Rhythm `M2M-RHYTHM/1.0.2` **frozen** (1.0.1/1.0.2 editorial; derivation unchanged since 1.0.0). Pitched `M2M-NOTES/2.0.0` **frozen Oct 1** — same-day MAJOR amendment after interaction review (piano-roll map with own length 4/8/16 bars, looping synced across instruments; mono default + chord stacks ≤7; drag-paint brush; v1.0.0 superseded). Golden-vector doc amendment still deferred; fixtures live in `tests/`. |
+| Protocols | Rhythm `M2M-RHYTHM/1.0.2` **frozen** (1.0.1/1.0.2 editorial; derivation unchanged since 1.0.0). Pitched `M2M-NOTES/2.1.0` **frozen Oct 1** — 2.0.0 piano-roll MAJOR (own-length looping map, mono + ≤7 chords, drag brush) then 2.1.0 MINOR/PATCH: 1/2-bar extents over a fixed 128-col store (non-destructive shrink/grow), map capo, ♯-fold view; eighth cell corrected to 240 ticks (frozen text's "600" was a typo). Fixtures in `tests/`. |
 | Python reference | **Conforms** — §7.4 cyclic reuse + exact-fill stop, both scripts; disjoint bits 11–18 pitch fix (OP1); validated over 240 synthetic roots. |
 | JS derivation + SMF writers | **Conforms** — `node tests/verify.mjs` PASS 98/98 (rhythm + NOTES: melody32, scale params, pitchBytes, mapped-SMF bytes); canonical downloads byte-identical to mido. |
-| Player features shipped | **app v1.1.0** (versioned via `docs/js/version.js`, header + snapshots): blocks-on-request (tip/height, shelf-by-default), 7 slots + shelf (max 8), drag & tap-move, **assign dropdown per block (evict-to-shelf)**, mute, independent/master loop modes, ⟲ re-align, session URL+localStorage, per-block `.mid` download, transpose ±1/±12 (melodic only), BPM box 20–300 (boundary commit), LIVE mode (60 s poll, evict-oldest, arrival-driven rotation), snapshots (cap 20), melody map piano roll (drag-paint, 4/8/16-bar looping, mono/chords ≤7, merkle-fill, mapped export ⤓), **two-click CLEAR** |
+| Player features shipped | **app v1.2.0** (versioned via `docs/js/version.js`, header + snapshots): blocks-on-request (tip/height, shelf-by-default), 7 slots + shelf (max 8), drag & tap-move, **assign dropdown per block (evict-to-shelf)**, mute, independent/master loop modes, ⟲ re-align, session URL+localStorage, per-block `.mid` download, transpose ±1/±12 (melodic only), BPM box 20–300 (boundary commit), LIVE mode (60 s poll, evict-oldest, arrival-driven rotation), snapshots (cap 20), melody map piano roll (drag-paint, **1/2/4/8/16-bar extents over fixed 128-col store**, mono/chords ≤7, **map capo ±1**, **♯-fold view with hidden-sharp markers**, merkle-fill, mapped export ⤓), **two-click CLEAR** |
 | Needs eyes/ears | Human browser pass never done — phone (iOS audio unlock, tap-to-move, live/paint ergonomics) + desktop |
 | Pages deploy | Repo public; serve from `main` → `/docs` |
 | `midi-files/`, `notes-midi/` archives | Pre-patch patterns; regeneration **deliberately deferred** |
@@ -49,8 +49,13 @@ Three pillars:
 - **Tempo is a piecewise tick↔second map** (segments): continuous at boundaries,
   pending changes commit at the next shared boundary (bar edge / cycle top) so the
   ensemble retimes together and never desyncs.
-- **Sessions round-trip through the URL** (`v,b,s,m,t,u` params) + localStorage
-  mirror; restored sessions derive locally — zero API calls.
+- **Sessions round-trip through the URL** (`v,b,s,m,t,u,p,q,o,h,g` params) +
+  localStorage mirror; restored sessions derive locally — zero API calls.
+- **Melody maps stay OBJECTS, not globals** (future-proofing the owner's
+  multi-map direction): one map is attached to the ensemble today, but all map
+  state (cells, extent, capo, polyphony, source) is a single self-contained unit
+  that can be cloned/assigned per instrument later; per-map `t mod mapTicks`
+  math already yields natural phase drift between maps of different lengths.
 - **Blocks are fetched on request only.** No background polling.
 
 ## 4. Decision log
@@ -119,10 +124,10 @@ Three pillars:
       channel 0, program 0; painted cells override, else the block's merkle melody
       (voice defaults never enter files). Byte-checked against the notes-script
       mido output in fixtures.
-- [x] **M2M-NOTES FROZEN — v1.0.0, amended to v2.0.0 the same day (Oct 1)** — OP1–4
+- [x] **M2M-NOTES FROZEN — v1.0.0, amended v2.0.0 then v2.1.0 same day (Oct 1)** — OP1–4
       ruled; melodic fixtures + verify.mjs extension (98 checks) + round-trip passing;
-      piano-roll rework bumped MAJOR per §1; rhythm doc 1.0.2 (editorial: Appendix A →
-      superseded pointer).
+      piano-roll rework bumped MAJOR per §1; same-day MINOR+PATCH (extents/capo/fold,
+      240-tick cell fix); rhythm doc 1.0.2 (editorial: Appendix A → superseded pointer).
 
 ### Next features — discuss when ready
 - [x] **Shelf-by-default + assign dropdown + clear (BUILT v1.1.0)** — manual fetches
@@ -131,6 +136,12 @@ Three pillars:
       armed CLEAR: unassign everything to the shelf, keep collection + map + tempo,
       stop transport, disarm LIVE; no refetch/demo. First-load demo and LIVE auto-place
       remain the only automatic assignments (owner ruling). Snapshots stamp appVersion.
+- [ ] **Multiple melody maps → instruments** (owner's stated future: divergent
+      notes/harmonies per instrument; lengths may differ → drift/offset by design).
+      Prepared-for: map state is already a self-contained unit with per-map
+      `t mod mapTicks` looping; next step is a `maps[]` registry + slot→mapId
+      assignment (single global map stays the default degenerate case). Do NOT
+      hardcode the one-map assumption into new features.
 - [ ] More instruments beyond the seven (user: "we can add more later").
 - [ ] Re-voicing: per-slot instrument dropdown vs today's fixed 7 slots.
 - [ ] Optional 808 tuning knobs (kick pitch/body, snare tone) — sound design, not transpose.
@@ -160,8 +171,8 @@ Three pillars:
 
 | Path | Role |
 |---|---|
-| `MIDI-PROTOCOL.md` | Frozen spec (M2M-RHYTHM/1.0.1) |
-| `MIDI-NOTES-PROTOCOL.md` | Pitched layer + shoehorn map + mapped export — **v1.0.0 FROZEN (Oct 1)** |
+| `MIDI-PROTOCOL.md` | Frozen spec (M2M-RHYTHM/1.0.2) |
+| `MIDI-NOTES-PROTOCOL.md` | Pitched layer + shoehorn piano roll + mapped export — **v2.1.0 FROZEN (Oct 1)** |
 | `make-fixtures.py`, `tests/` | Cross-language verification |
 | `docs/` | GitHub Pages player |
 | `AGENTS.md` | Agent onboarding + build-state details |

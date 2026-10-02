@@ -10,15 +10,18 @@
 //     that commits at the next shared boundary so the ensemble retimes together.
 //     Render-time only — §5's 120 BPM and the .mid download are untouched.
 //   - Voice triggering carries pitch + per-slot transpose (melodic voices;
-//     percussion ignores it). The M2M-NOTES draft §4 melody map + §4 source
-//     switch resolve melodic pitches at schedule time; canonical files stay pure.
+//     percussion ignores it). M2M-NOTES v2.1: the melody map is a fixed
+//     128-column (16-bar) store whose mapBars selects the looping EXTENT
+//     (shrink hides the tail, grow restores — data never destroyed); a map-level
+//     capo (mapOffset ±) shifts sounding PAINTED pitches only, painted data is
+//     untouched; unpainted cells resolve via the melody-source switch.
 //   - LIVE mode: rotation is a slot permutation moved with the parts themselves
 //     (cursor intact) — rotation NEVER re-times anything, only re-voices it.
 //     Arrival-driven rotation lives in ui.js; the engine owns the mechanism.
 
 import { BAR_TICKS, NOTE_VELOCITY } from "./protocol.js";
 import { getVoice, VOICES } from "./synth.js";
-import { CELL_TICKS, foldMidi, mapTicksFor, POLY_STACK_CAP, DEFAULT_MAP_BARS, MAP_BAR_OPTIONS } from "./notes.js";
+import { CELL_TICKS, foldMidi, mapTicksFor, POLY_STACK_CAP, KEY_OFFSET_CAP, DEFAULT_MAP_BARS, MAP_BAR_OPTIONS, MAP_MAX_COLS } from "./notes.js";
 
 const PPQ = 480; // §5 ticks per quarter
 const tpsFor = (bpm) => (bpm * PPQ) / 60; // ticks/sec = 960 at 120 BPM
@@ -47,18 +50,22 @@ export class Ensemble {
     this.slots = SLOT_INSTRUMENTS.map((voiceId) => ({
       voiceId, block: null, part: null, muted: false, transpose: 0,
     }));
-    // ── M2M-NOTES v2 melody map (render-time; exports are explicit actions) ──
+    // ── M2M-NOTES v2.1 melody map (render-time; exports are explicit actions) ──
     // cells[col] = stack of MIDI pitches (21–108); [] = empty column.
-    // The map has its OWN length (4/8/16 bars), loops forever, synced across all
-    // instruments: column = floor((t mod mapTicks) / 600) on the MASTER clock.
+    // The store is ALWAYS the 128-col (16-bar) superset; mapBars selects the
+    // looping extent — column = floor((t mod mapTicksFor(mapBars)) / CELL_TICKS) on the
+    // MASTER clock, so the map is global truth synced across every instrument.
+    // mapOffset = map-level capo (semitones): shifts sounding painted pitches
+    // only; fallbacks (merkle melody / voice default) are not capoed.
     this.polyphony = false;        // false: one pitch per column (replace); true: stacks ≤7
     this.mapBars = DEFAULT_MAP_BARS;
-    this.cells = this._makeCells(DEFAULT_MAP_BARS);
+    this.cells = this._makeCells();
+    this.mapOffset = 0;
     this.melodySource = "none"; // 'merkle' | 'none' (empty-column resolution)
   }
 
-  _makeCells(bars) {
-    return Array.from({ length: bars * 8 }, () => []);
+  _makeCells() {
+    return Array.from({ length: MAP_MAX_COLS }, () => []);
   }
 
   // ── change notifications ──
@@ -120,13 +127,15 @@ export class Ensemble {
     this.emit();
   }
 
-  // ── melody map + source (M2M-NOTES v2; player-side) ──
-  setMapBars(bars) {
+  // ── melody map + source + capo (M2M-NOTES v2.1; player-side) ──
+  get activeCols() { return this.mapBars * 8; }
+  setMapBars(bars) {                       // extent change only — data untouched
     if (!MAP_BAR_SET.has(bars) || bars === this.mapBars) return;
-    const prev = this.cells;
     this.mapBars = bars;
-    this.cells = this._makeCells(bars);           // resize KEEPS overlapping columns
-    for (let i = 0; i < Math.min(prev.length, this.cells.length); i++) this.cells[i] = prev[i];
+    this.emit();
+  }
+  setMapOffset(n) {
+    this.mapOffset = Math.max(-KEY_OFFSET_CAP, Math.min(KEY_OFFSET_CAP, n | 0));
     this.emit();
   }
   setPolyphony(on) {
@@ -134,10 +143,11 @@ export class Ensemble {
     if (!this.polyphony) for (const c of this.cells) if (c.length > 1) c.length = 1;
     this.emit();
   }
-  // paint one column: n = MIDI pitch, or null/0 = clear the whole column
+  // paint one column: n = MIDI pitch, or null/0 = clear the whole column.
+  // Columns outside the current looping extent are not paintable (hidden tail).
   paintCell(col, n) {
     const c = this.cells[col];
-    if (!c) return;
+    if (!c || col >= this.activeCols) return;
     if (!n) { c.length = 0; return; }
     const p = foldMidi(n);
     if (this.polyphony) {
@@ -148,7 +158,7 @@ export class Ensemble {
   }
   eraseCellPitch(col, n) {
     const c = this.cells[col];
-    if (!c || !n) return;
+    if (!c || !n || col >= this.activeCols) return;
     const i = c.indexOf(n);
     if (i >= 0) c.splice(i, 1);
   }
@@ -157,18 +167,19 @@ export class Ensemble {
     this.melodySource = s === "merkle" ? "merkle" : "none";
     this.emit();
   }
-  // resolve a melodic onset's pitch STACK: painted column → source-merkle melody
-  // of this event → voice default; per-slot transpose folds each pitch last
+  // resolve a melodic onset's pitch STACK: painted column (capoed) → source-merkle
+  // melody of this event → voice default; per-slot transpose folds each last
   _pitchStackFor(absTick, part, evIdx, voice, slot) {
     const col = Math.floor((absTick % mapTicksFor(this.mapBars)) / CELL_TICKS);
     const stack = this.cells[col];
-    let base;
-    if (stack && stack.length) base = stack;
+    let base, off = 0;
+    if (stack && stack.length) { base = stack; off = this.mapOffset; } // capo is the map's property
     else if (this.melodySource === "merkle" && part.block && part.block.melody)
       base = [part.block.melody[evIdx % part.block.melody.length]];
     else base = [voice.defaultNote];
     const tr = slot.transpose | 0;
-    return tr ? base.map((m) => foldMidi(m + tr)) : base.slice();
+    if (!off && !tr) return base.slice();
+    return base.map((m) => foldMidi(m + off + tr));
   }
 
   // ── tempo (player-only; the derived stream and .mid download always

@@ -1,11 +1,11 @@
-# M2M-NOTES Protocol — v2.0.0
+# M2M-NOTES Protocol — v2.1.0
 
 **The pitched layer: deterministic merkle melodies, the shoehorn piano roll, and mapped MIDI export.**
 
 | | |
 |---|---|
 | Protocol ID | `M2M-NOTES` |
-| Version | `2.0.0` — **FROZEN** (Oct 1, same-day MAJOR amendment to `1.0.0` after interaction review; see Changelog) |
+| Version | `2.1.0` — **FROZEN** (Oct 1; 2.0.1 fixed the eighth-cell arithmetic typo, 2.1.0 adds subdivisions + capo + fold view — see Changelog) |
 | Depends on | `M2M-RHYTHM v1.0.2` (§2–§9 consumed verbatim: same root → same rhythm, always) |
 | Fulfills | `MIDI-PROTOCOL.md` Appendix A reservation |
 | Purpose | Assigns meaning to previously *reserved* bits (root 2–15, leaf 11–18), defines the shoehorn map format, and specifies `.mid` exports with pitches |
@@ -100,11 +100,14 @@ player shows a 2-octave window, default C2–B3, with an octave shifter — the 
 is view state, not data).
 
 - **The map has its OWN length** (owner ruling: "there will not automatically be
-  8 bars of melody"): `mapBars ∈ {4, 8, 16}`, **default 4**, selectable in the player.
-  `mapTicks = mapBars × 1920`. Columns = `mapBars × 8` eighths of 600 ticks (OP2
-  unchanged: eighths only).
+  8 bars of melody"): `mapBars ∈ {1, 2, 4, 8, 16}`, **baseline/default 4**; 1 and 2
+  are the 1/4 and 1/2 subdivisions (v2.1, MINOR). `mapTicks = mapBars × 1920`.
+  Columns = `mapBars × 8` **eighths of 240 ticks** (PPQ 480 ÷ 2 — the frozen text's
+  "600 ticks" was an arithmetic typo for eighths; corrected, intent unchanged).
+  The cell store is a FIXED 16-bar superset (128 columns); `mapBars` selects the
+  looping EXTENT — shrinking hides the tail, never destroys it; growing restores.
 - **The map loops forever, synced across all instruments:** a note with master tick
-  `t` reads column `floor((t mod mapTicks) / 600)`. Every block — any loop length —
+  `t` reads column `floor((t mod mapTicks) / 240)`. Every block — any loop length —
   sings through the SAME looping map; no block owns a melody, and no rhythm event
   exists without an underlying map position. An 8-bar block over a 4-bar map plays
   the melody twice per loop, in phase with the clock.
@@ -120,20 +123,29 @@ is view state, not data).
   drag covers every cell crossed (interpolated so fast drags can't skip columns),
   each cell taking **its own row's pitch** (piano-roll brush — there is no palette).
   Erase removes that row's pitch from the column's stack (right-drag / clear column).
-- **Empty-column resolution — melody-source switch** (unchanged from v1): the player
-  carries `source ∈ {merkle, none}`:
+- **Map-level capo (`&h=`):** a map-scope sounding offset of ±1 semitones per click
+  (clamped ±11). **Painted cell values are never modified** — the capo adds to
+  painted pitches at schedule and export time (fallbacks are not capoed; per-slot
+  transpose stacks after the capo, then folds to 21–108). Clicking the readout
+  resets to 0.
+- **Folded-♯ view (player display, not data):** folding hides black-key rows;
+  painting while folded places naturals only. Black-key pitches already painted
+  show as a **notch marker on the natural row below** and survive folding
+  untouched. Fold state is view-only, never serialized.
+- **Empty-column resolution — melody-source switch** (OP3 resolved by owner
+  refinement): the player carries a per-session switch `source ∈ {merkle, none}`:
   1. `source = merkle` → empty-column onsets take the **owning event's deterministic
      pitch from §3**;
   2. `source = none` → empty-column onsets take the **voice's default note**.
-  "Fill" (§5) materializes (1) into cells as a starting sketch; the switch is what
-  live per-block melody behavior relies on — painted cells always override.
+  "Fill" (§5) is the act of materializing source (1) into cells as a starting sketch.
 - **Per-slot transpose applies AFTER the map** to every pitch of the stack (melodic
-  slots only — percussion never pitched, standing ruling), then folds 21–108 (§3).
+  slots only — percussion never pitched, per the standing ruling), then folds
+  21–108 (§3).
 
 ## 5. Composition: merkle-fill
 
 `fillMap(block B)`: run B's rhythm events through §3 and paint each event's pitch
-into its column `floor((o.tick mod mapTicks) / 600)`; cells with no event under B
+into its column `floor((o.tick mod mapTicks) / 240)`; cells with no event under B
 are left untouched. Because the map wraps at its own length, a block longer than
 the map contributes its **whole** rhythm, wrapped (collisions: monophonic → last
 written pitch wins; polyphonic → pitches union, cap 7). Fill respects the current
@@ -161,13 +173,23 @@ identical delta sequence — timing is byte-identical to the canonical drum file
 
 ## 7. Session encoding
 
-`&q=` = map length in bars (4|8|16; default 4 when absent with `&p`). `&o=p` =
-polyphony on. `&p=` = base64url of the **count-prefixed column payload**: per
-column, one byte `n` (0–7) followed by `n` pitch bytes (21–108). Omitted entirely
-when no cell is painted. **Legacy:** `&p=` without `&q=` whose payload is exactly
-64 bytes decodes as v1 mono columns over an 8-bar map (kept so early links still
-open). A map in a shared URL restores the melody arrangement exactly — pitch is
-now part of a session's identity.
+`&q=` = map length in bars (1|2|4|8|16; default 4 when absent with `&p`) — the
+**looping extent** into the fixed 128-column store; `&o=p` = polyphony on; `&h=±N`
+= map capo (clamped ±11). `&p=` = base64url of the **count-prefixed column payload**:
+per column, one byte `n` (0–7) followed by `n` pitch bytes (21–108), **trailing
+empty columns trimmed** (so a painted tail beyond a shrunken extent still
+round-trips). Omitted entirely when no cell is painted. **Legacy:** `&p=` without
+`&q=` whose payload is exactly 64 bytes decodes as v1 mono columns over an 8-bar
+map (kept so early links still open). A map in a shared URL restores the melody
+arrangement exactly — pitch is now part of a session's identity.
+
+**Future note (multi-map, v1 of this doc does NOT yet define):** later versions
+assign *different* maps to different instruments, with lengths that need not
+coincide — phase drift/offset between maps is then emergent and desired. The
+design keeps this unboxed: pitch resolution is always `map.cells[floor((t mod
+map.mapTicks)/240)]` evaluated per (map, t) pair, so per-map clocks drift
+naturally the moment more than one map exists. Maps must stay addressable
+objects, never inlined assumptions.
 
 ## 8. Verification (done at freeze)
 
@@ -176,6 +198,18 @@ now part of a session's identity.
 Python ≡ JS — **PASS, 98 checks** at freeze time.
 
 ## 9. Freeze record
+
+### 2.1.0 (Oct 1, MINOR + PATCH)
+- [x] Subdivided extents: `mapBars ∈ {1, 2}` added (1/2, 1/4 of baseline 4); fixed
+      128-column store — shrink hides the tail, grow restores it (additive: outputs for
+      existing 4/8/16 sessions unchanged)
+- [x] Map capo: ±1-stepped `mapOffset` (±11 bound), sounding painted pitches only;
+      exports include it; fallbacks never capoed
+- [x] ♯-fold view: display filter with hidden-sharp notch markers; data immutable
+- [x] PATCH fix: frozen §4 text said cells are "600 ticks" — arithmetic error for
+      "eighths" (correct: 240 at PPQ 480; 64 × 240 = 15360). Intent always eighth-grid
+- [x] Verified headless: extent loop at 240, tail preservation, capo stack order,
+      session round-trip with hidden tail, legacy links; 98 rhythm+NOTES fixture checks
 
 ### 2.0.0 (Oct 1, same-day MAJOR amendment to 1.0.0)
 Owner interaction review after first hands-on use. Output-affecting decisions — MAJOR
@@ -196,7 +230,7 @@ per §1 governance, taken deliberately while the only consumer is our own repo:
 ### 1.0.0 (Oct 1, superseded same day)
 
 - [x] Open Point 1 decided — **fix (Option A), Sep 30 owner ruling**; doc pins disjoint bits 11–18
-- [x] Open Point 2 decided — eighths only (64 × 600 ticks); 16ths deferred as format-compatible option
+- [x] Open Point 2 decided — eighths only (64 × 240 ticks; see 2.1.0 typo-fix note); 16ths deferred as format-compatible option
 - [x] Open Point 3 decided — melody-**source switch** (`merkle | none`) resolves empty cells; painted cells override in both modes
 - [x] Open Point 4 decided — mapped export uses fixed program 0, channel 0
 - [x] `notes-from-merkle.py` patched to match and cross-checked (PB ⟂ duration proven; rhythm identical between scripts on all 6 fixture roots)
@@ -211,6 +245,11 @@ freeze when the feature is brand-new UI.*
 
 ## Changelog
 
+- `2.1.0` — MINOR + PATCH. 1/2-bar looped extents over the fixed 128-col store
+  (non-destructive shrink/grow), map-level capo ±1 (painted sounding pitches only),
+  ♯-fold view with notch markers; frozen-text typo fix: eighth cell = 240 ticks,
+  not 600 (the shipped code's 600 made the back half of every map silent — found and
+  fixed with real-timing tests).
 - `2.0.0` — **Freeze (MAJOR, same-day amendment).** Piano-roll model per owner
   rulings: own-length looping map (4/8/16 bars, default 4) synced across
   instruments; monophonic default with ≤7-pitch chord stacks via explicit

@@ -1,9 +1,10 @@
 // ui.js — DOM wiring + product flow (polling, snapshots, paint).
 // State lives here (blocks array + engine slots + map); state.js handles
 // URL/localStorage; engine.js handles audio, placement, rotation mechanics.
+// Folded ♯ view and the keyboard window are view state, never data.
 
 import { derivePattern, PROTOCOL_ID, PROTOCOL_VERSION } from "./protocol.js";
-import { deriveMelody, noteName, CELL_TICKS } from "./notes.js";
+import { deriveMelody, noteName, CELL_TICKS, foldMidi, mapTicksFor } from "./notes.js";
 import { fetchTip, fetchByHeight } from "./api.js";
 import { downloadMidi, downloadMidiMapped } from "./smf.js";
 import { Ensemble, MAX_BLOCKS } from "./engine.js";
@@ -53,6 +54,7 @@ function view() {
     cells: engine.cells.map((c) => c.slice()),
     mapBars: engine.mapBars,
     polyphony: engine.polyphony,
+    mapOffset: engine.mapOffset,
     source: engine.melodySource,
   };
 }
@@ -179,10 +181,21 @@ liveBtn.addEventListener("click", () => {
 const ROWS = 24, ROW_H = 14, GUT = 46, CELL_MIN_W = 16;
 const BLACK_SET = new Set([1, 3, 6, 8, 10]);
 let octShift = 0;                       // view offset: rows shown (not data)
-let mapGeom = { cellW: CELL_MIN_W, cols: 32 };
+let mapGeom = { cellW: CELL_MIN_W, cols: 32, rows: [] };
 let stroking = false, eraseStroke = false, lastXY = null, strokeDirty = false;
+let foldSharps = false;                   // view filter: natural rows only (data untouched)
+const WHITES = new Set([0, 2, 4, 5, 7, 9, 11]);
 
 const viewTop = () => 59 + 12 * octShift;   // top pitch of window (B3 default)
+
+function rowsPitches() {
+  const top = viewTop();
+  const list = [];
+  for (let p = top; p > top - 24; p--) {
+    if (!foldSharps || WHITES.has(((p % 12) + 12) % 12)) list.push(p);
+  }
+  return list;
+}
 
 srcBtn.addEventListener("click", () => {
   engine.setMelodySource(engine.melodySource === "merkle" ? "none" : "merkle");
@@ -194,6 +207,9 @@ $("#barsSeg").querySelectorAll("button").forEach((btn) =>
     engine.setMapBars(parseInt(btn.dataset.bars, 10));
     persist(); render();
   }));
+$("#keyDown").addEventListener("click", () => { engine.setMapOffset(engine.mapOffset - 1); persist(); render(); });
+$("#keyUp").addEventListener("click", () => { engine.setMapOffset(engine.mapOffset + 1); persist(); render(); });
+$("#foldBtn").addEventListener("click", () => { foldSharps = !foldSharps; renderMap(); syncMapBtns(); });
 $("#polyChk").addEventListener("change", (e) => {
   engine.setPolyphony(e.target.checked); persist(); render();
 });
@@ -204,7 +220,7 @@ $("#fillBtn").addEventListener("click", () => {
   const idx = parseInt($("#fillSelect").value, 10);
   const b = blocks[idx];
   if (!b || !b.melody) { setStatus("pick a block with a melody to fill", true); return; }
-  const cols = engine.cells.length;
+  const cols = engine.activeCols;                      // wrap at ACTIVE extent
   b.pattern.onsets.forEach((o, i) => {
     engine.paintCell(Math.floor((o.tick % (cols * CELL_TICKS)) / CELL_TICKS),
       b.melody[i % b.melody.length]);
@@ -214,12 +230,12 @@ $("#fillBtn").addEventListener("click", () => {
 });
 
 function cellFromXY(x, y) {
-  const { cellW, cols } = mapGeom;
+  const { cellW, cols, rows } = mapGeom;
   if (x < GUT) return null;
   const col = Math.floor((x - GUT) / cellW);
   const row = Math.floor(y / ROW_H);
-  if (col < 0 || col >= cols || row < 0 || row >= ROWS) return null;
-  const pitch = viewTop() - row;
+  if (col < 0 || col >= cols || row < 0 || row >= rows.length) return null;
+  const pitch = rows[row];
   if (pitch < 21 || pitch > 108) return null;
   return { col, pitch };
 }
@@ -234,20 +250,21 @@ function strokeAt(x, y) {
 
 function drawMap() {
   const canvas = $("#mapCanvas"), wrap = $("#mapWrap");
-  const cols = engine.cells.length;
+  const cols = engine.mapBars * 8;             // visible/editable window (loop extent)
+  const rows = rowsPitches();
   const cellW = Math.max(CELL_MIN_W, Math.floor((wrap.clientWidth - GUT - 6) / cols));
-  mapGeom = { cellW, cols };
+  mapGeom = { cellW, cols, rows };
   canvas.width = GUT + cellW * cols;
-  canvas.height = ROWS * ROW_H + 2;
+  canvas.height = rows.length * ROW_H + 2;
   const g = canvas.getContext("2d");
   g.clearRect(0, 0, canvas.width, canvas.height);
+  const H = rows.length * ROW_H;
 
-  for (let r = 0; r < ROWS; r++) {
-    const pitch = viewTop() - r;
-    const black = BLACK_SET.has(((pitch % 12) + 12) % 12);
-    g.fillStyle = black ? "#12141b" : "#1e2330";
+  rows.forEach((pitch, r) => {
+    const white = WHITES.has(((pitch % 12) + 12) % 12);
+    g.fillStyle = (!foldSharps && !white) ? "#12141b" : "#1e2330";
     g.fillRect(0, r * ROW_H, canvas.width, ROW_H);
-    if (!black) {
+    if (white) {
       g.fillStyle = pitch % 12 === 0 ? "#dfe6f0" : "#8a93a6";
       g.font = "9px ui-monospace, Menlo, monospace";
       g.fillText(noteName(pitch), 4, r * ROW_H + ROW_H - 4);
@@ -256,23 +273,35 @@ function drawMap() {
       g.strokeStyle = "#2a3040"; g.lineWidth = 1;
       g.beginPath(); g.moveTo(GUT, (r + 1) * ROW_H + 0.5); g.lineTo(canvas.width, (r + 1) * ROW_H + 0.5); g.stroke();
     }
-  }
+  });
   for (let col = 0; col <= cols; col++) {
     const x = GUT + col * cellW + 0.5;
     g.strokeStyle = col % 8 === 0 ? "#4a5468" : (col % 2 === 0 ? "rgba(42,48,64,.9)" : "rgba(42,48,64,.4)");
     g.lineWidth = col % 8 === 0 ? 1.4 : 1;
-    g.beginPath(); g.moveTo(x, 0); g.lineTo(x, ROWS * ROW_H); g.stroke();
+    g.beginPath(); g.moveTo(x, 0); g.lineTo(x, H); g.stroke();
   }
   g.fillStyle = "#7dd3fc";
-  engine.cells.forEach((stack, col) => {
+  for (let col = 0; col < cols; col++) {
+    const stack = engine.cells[col] || [];
     for (const p of stack) {
-      const row = viewTop() - p;
-      if (row < 0 || row >= ROWS) continue;      // painted but outside the window
-      g.fillRect(GUT + col * cellW + 1, row * ROW_H + 1, Math.max(2, cellW - 2), ROW_H - 2);
+      const r = rows.indexOf(p);
+      if (r >= 0) {
+        g.fillRect(GUT + col * cellW + 1, r * ROW_H + 1, Math.max(2, cellW - 2), ROW_H - 2);
+      } else if (foldSharps) {
+        // hidden sharp (black key) whose natural-below row is visible: notch marker
+        const rn = rows.indexOf(p - 1);
+        if (rn >= 0) {
+          g.beginPath();
+          g.moveTo(GUT + (col + 1) * cellW - 2, rn * ROW_H + 2);
+          g.lineTo(GUT + (col + 1) * cellW - 2, rn * ROW_H + ROW_H - 3);
+          g.lineTo(GUT + col * cellW + 2, rn * ROW_H + ROW_H / 2);
+          g.closePath(); g.fill();
+        }
+      }
     }
-  });
+  }
   g.fillStyle = "#8a93a6"; g.font = "8px sans-serif";
-  for (let bar = 0; bar < cols / 8; bar++) g.fillText(String(bar + 1), GUT + bar * 8 * cellW + 2, ROWS * ROW_H - 2);
+  for (let bar = 0; bar < cols / 8; bar++) g.fillText(String(bar + 1), GUT + bar * 8 * cellW + 2, H - 2);
 }
 
 function wireMapCanvas() {
@@ -309,11 +338,18 @@ function wireMapCanvas() {
   canvas.addEventListener("pointercancel", endStroke);
 }
 
+function syncMapBtns() {
+  const fb = $("#foldBtn");
+  if (fb) { fb.classList.toggle("sel", foldSharps); fb.textContent = foldSharps ? "♯ folded" : "♯ fold"; }
+}
+
 function renderMap() {
   // control sync
   $("#polyChk").checked = engine.polyphony;
   document.querySelectorAll("#barsSeg button").forEach((btn) =>
     btn.classList.toggle("sel", parseInt(btn.dataset.bars, 10) === engine.mapBars));
+  const kl = $("#keyLbl"); if (kl) kl.textContent = engine.mapOffset === 0 ? "±0" : (engine.mapOffset > 0 ? `+${engine.mapOffset}` : `−${-engine.mapOffset}`);
+  syncMapBtns();
 
   // fill selector
   const sel = $("#fillSelect");
@@ -333,12 +369,17 @@ function renderMap() {
 
 // mapped export pitch SETS: painted stack → else the block's merkle melody
 // (deterministic; voice defaults are a player concept and never enter files — §6)
+// mapped export pitch SETS: painted column (capo applied) → else the block's
+// merkle melody (deterministic; voice defaults never enter files — M2M-NOTES §6).
+// Looping wraps at the ACTIVE extent (mapBars), never the 128-col storage.
 function exportPitchSets(b) {
   if (!b.melody) return null;
-  const cols = engine.cells.length;
+  const mapTicks = mapTicksFor(engine.mapBars);        // wrap at ACTIVE extent
   return b.pattern.onsets.map((o, i) => {
-    const stack = engine.cells[Math.floor((o.tick % (cols * CELL_TICKS)) / CELL_TICKS)];
-    return (stack && stack.length) ? stack.slice() : [b.melody[i % b.melody.length]];
+    const stack = engine.cells[Math.floor((o.tick % mapTicks) / CELL_TICKS)];
+    if (stack && stack.length)
+      return stack.map((p) => foldMidi(p + engine.mapOffset));   // capo in, fold 21–108
+    return [b.melody[i % b.melody.length]];
   });
 }
 
@@ -661,6 +702,7 @@ async function applySessionAsync(st) {
   if (st.transpose) st.transpose.forEach((t, i) => { if (engine.slots[i]) engine.slots[i].transpose = t | 0; });
   if (st.bpm && st.bpm !== engine.bpm) { try { engine.setBpm(st.bpm); } catch (e) { } }
   if (st.mapBars) engine.setMapBars(st.mapBars);
+  if (st.mapOffset) engine.setMapOffset(st.mapOffset);
   engine.setPolyphony(!!st.polyphony);
   engine.clearMap();
   if (st.cells) st.cells.forEach((c, i) => {
@@ -690,7 +732,7 @@ async function bootFresh() {
 
 (async function boot() {
   const tag = document.getElementById("protocolTag");
-  if (tag) tag.textContent = `${PROTOCOL_ID} v${PROTOCOL_VERSION} · bitcoin merkle roots → rhythm · +M2M-NOTES v2.0.0 · player v${APP_VERSION}`;
+  if (tag) tag.textContent = `${PROTOCOL_ID} v${PROTOCOL_VERSION} · bitcoin merkle roots → rhythm · +M2M-NOTES v2.1.0 · player v${APP_VERSION}`;
   const st = session.load();
   if (st) await applySessionAsync(st); else await bootFresh();
   wireMapCanvas();

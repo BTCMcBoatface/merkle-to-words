@@ -1,19 +1,25 @@
-// notes.js — M2M-NOTES v2.0.0 implementation (pitch layer on the frozen rhythm).
-// v2.0.0 (Oct 1, same-day amendment after interaction review): the melody map is a
-// piano roll with its OWN length (4/8/16 bars, default 4) that loops forever, synced
-// across all instruments (position = t mod mapTicks). Monophonic by default; an
-// optional polyphony mode stacks simultaneous pitches per column (cap 7).
-// Mirrors notes-from-merkle.py for the deterministic layer; fixture-verified.
+// notes.js — M2M-NOTES v2.1 implementation (pitch layer on the frozen rhythm).
+// The melody map is a piano roll with its OWN looping length (1/2/4/8/16 bars,
+// default 4 = baseline), synced across all instruments (position = t mod mapTicks).
+// The cell store is a FIXED 128-column (16-bar) superset; mapBars selects the
+// looping window — shrinking hides the tail, never destroys; growing restores.
+// Monophonic by default; optional polyphony stacks ≤7 simultaneous pitches per
+// column. Map-level capo (±1) offsets sounding pitches without touching painted
+// data. Sharp-folding is view-only (painting snaps to naturals; hidden sharps
+// show as notch markers). Mirrors notes-from-merkle.py for the deterministic
+// layer; fixture-verified.
 // Rhythm is untouched: this module only reads the leaf bytes rhythm already derived
 // (bits 11–18, disjoint per OP1 fix) plus scale bits from the root (§2 allocation).
 
 import { hexToBytes, deriveLeaves, BAR_TICKS, DEFAULT_DEPTH } from "./protocol.js";
 
-// ── map geometry (v2) ──
-export const CELL_TICKS = 600;                    // one eighth (OP2)
-export const MAP_BAR_OPTIONS = [4, 8, 16];
+// ── map geometry (v2.1: 1/2 and 1/4 subdivisions; fixed 128-col store, looped extent) ──
+export const CELL_TICKS = 240;                    // one eighth at PPQ 480 (480/2) — 64 eighths fill the 8-bar cycle
+export const MAP_BAR_OPTIONS = [1, 2, 4, 8, 16];
 export const DEFAULT_MAP_BARS = 4;
+export const MAP_MAX_COLS = 128;                  // 16 bars × 8 eighths
 export const POLY_STACK_CAP = 7;
+export const KEY_OFFSET_CAP = 11;                 // map-level ±1 capo bound (±12 is octave)
 export const mapTicksFor = (bars) => bars * BAR_TICKS;
 
 // Legacy v1 grid constants (8-bar cycle) — kept for decode compatibility only.
@@ -88,10 +94,14 @@ export async function deriveMelody(rootHex) {
   return { scale, melody32 };
 }
 
-// ── map stack codec (v2): per column [count, notes...] — URL-friendly ──
+// ── map stack codec (v2.1): per column [count, notes...] — URL-friendly.
+// encode trims trailing empty columns (payload stays compact at 128-col storage;
+// data painted beyond the looping extent survives a session round-trip). ──
 export function encodeCells(cells) {
+  const trimmed = [...cells];
+  while (trimmed.length && !(trimmed[trimmed.length - 1] || []).length) trimmed.pop();
   const bytes = [];
-  for (const c of cells) {
+  for (const c of trimmed) {
     const n = Math.min(c.length, POLY_STACK_CAP);
     bytes.push(n);
     for (let i = 0; i < n; i++) bytes.push(c[i]);
@@ -99,24 +109,24 @@ export function encodeCells(cells) {
   return bytes;
 }
 
-export function decodeCells(bytes, cols) {
-  const out = [];
+export function decodeCells(bytes, cols = MAP_MAX_COLS) {
+  const out = Array.from({ length: cols }, () => []);
   let i = 0;
   for (let col = 0; col < cols; col++) {
-    const c = [];
-    if (i < bytes.length) {
-      const n = Math.min(bytes[i++] | 0, POLY_STACK_CAP);
-      for (let k = 0; k < n && i < bytes.length; k++) {
-        const p = bytes[i++];
-        if (p >= 21 && p <= 108) c.push(p);
-      }
+    if (i >= bytes.length) break;
+    const n = Math.min(bytes[i++] | 0, POLY_STACK_CAP);
+    for (let k = 0; k < n && i < bytes.length; k++) {
+      const p = bytes[i++];
+      if (p >= 21 && p <= 108) out[col].push(p);
     }
-    out.push(c);
   }
   return out;
 }
 
-// legacy v1 payload: one byte per column (0 empty) over the 8-bar cycle → mono cells
+// legacy v1 payload: one byte per column (0 empty) over the 8-bar cycle → mono
+// cells, padded into the 128-col store
 export function decodeLegacyCells(bytes) {
-  return bytes.map((v) => (v >= 21 && v <= 108 ? [v] : []));
+  const out = Array.from({ length: MAP_MAX_COLS }, () => []);
+  bytes.forEach((v, i) => { if (i < MAP_MAX_COLS && v >= 21 && v <= 108) out[i] = [v]; });
+  return out;
 }
