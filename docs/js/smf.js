@@ -89,10 +89,14 @@ export function midiFileName(rootHex, height = null) {
   return height != null ? `${height}_merkle_${prefix}.mid` : `merkle_${prefix}.mid`;
 }
 
-// ── M2M-NOTES draft §6: mapped export ──
+// ── M2M-NOTES v2 §6: mapped export ──
 // Same timing container as the canonical file; channel 0, one program_change 0
-// after tempo, per-event pitches (21–108). Running status like mido.
-export function writeMappedMidiBytes(notes, pitches) {
+// after tempo. `pitchSets[i]` = array of simultaneous pitches (1..7) for event i.
+// Per-event byte order (normative for poly exports): all note-ons ascending at
+// delta 0, then their note-offs at delta = sounding (first carries it, rest 0),
+// then gap offs likewise. Monophonic (k=1) collapses to the mido notes-script
+// layout exactly — fixture-verified. Running status like mido.
+export function writeMappedMidiBytes(notes, pitchSets) {
   const track = [];
   let lastStatus = -1;
   const pushEvent = (delta, status, d1, d2) => {
@@ -107,14 +111,15 @@ export function writeMappedMidiBytes(notes, pitches) {
     (MICROSECONDS_PER_BEAT >> 8) & 0xff,
     MICROSECONDS_PER_BEAT & 0xff);
   track.push(0x00, 0xc0, 0x00); // program_change ch0 prog0 (OP4: fixed)
-  lastStatus = -1; // program change is its own status; note events carry theirs
+  lastStatus = -1;
 
   for (let i = 0; i < notes.length; i++) {
     const { sounding, gap } = dutySplit(notes[i].ticks);
-    const key = pitches[i] | 0;
-    pushEvent(0, 0x90, key, NOTE_VELOCITY);
-    pushEvent(sounding, 0x80, key, 0x00);
-    if (gap > 0) pushEvent(gap, 0x80, key, 0x00);
+    const set = [...(pitchSets[i] || [])].sort((a, b) => a - b);
+    if (!set.length) continue;
+    for (const key of set) pushEvent(0, 0x90, key, NOTE_VELOCITY);
+    set.forEach((key, j) => pushEvent(j === 0 ? sounding : 0, 0x80, key, 0x00));
+    if (gap > 0) set.forEach((key, j) => pushEvent(j === 0 ? gap : 0, 0x80, key, 0x00));
   }
 
   track.push(0x00, 0xff, 0x2f, 0x00);
@@ -137,8 +142,8 @@ export function mappedMidiFileName(rootHex, height = null) {
   return height != null ? `${height}_merkle_${prefix}_notes.mid` : `merkle_${prefix}_notes.mid`;
 }
 
-export function downloadMidiMapped(notes, pitches, rootHex, height = null) {
-  const bytes = writeMappedMidiBytes(notes, pitches);
+export function downloadMidiMapped(notes, pitchSets, rootHex, height = null) {
+  const bytes = writeMappedMidiBytes(notes, pitchSets);
   const blob = new Blob([bytes], { type: "audio/midi" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");

@@ -1,6 +1,6 @@
 {
  "protocol": "M2M-RHYTHM/1.0.2",
- "notesProtocol": "M2M-NOTES/1.0.0",
+ "notesProtocol": "M2M-NOTES/2.0.0",
  "fixtures": [
   {
    "root": "2e0f4eb72a525d443b731dce006d728a2f3575768a9e475fc1b4c66016475600",

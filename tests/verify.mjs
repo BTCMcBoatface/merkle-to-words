@@ -55,8 +55,8 @@ for (const f of fixtures) {
     eq(mel.melody32, f.melody.melody32, `${f.label}: melody32`);
 
     if (f.smfMappedHex) {
-      const pitches = p.notes.map((_n, i) => f.melody.melody32[i % 32]);
-      eq(toBytesHex(writeMappedMidiBytes(p.notes, pitches)), f.smfMappedHex,
+      const sets = p.notes.map((_n, i) => [f.melody.melody32[i % 32]]); // mono sets (k=1)
+      eq(toBytesHex(writeMappedMidiBytes(p.notes, sets)), f.smfMappedHex,
         `${f.label}: mapped SMF bytes == notes-pipeline mido reference`);
     }
   }

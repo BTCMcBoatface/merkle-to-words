@@ -1,11 +1,11 @@
-# M2M-NOTES Protocol — v1.0.0
+# M2M-NOTES Protocol — v2.0.0
 
-**The pitched layer: deterministic merkle melodies, the shoehorn pitch map, and mapped MIDI export.**
+**The pitched layer: deterministic merkle melodies, the shoehorn piano roll, and mapped MIDI export.**
 
 | | |
 |---|---|
 | Protocol ID | `M2M-NOTES` |
-| Version | `1.0.0` — **FROZEN** (Oct 1: melodic fixtures + paint UI round-trip passed; JS ≡ Python over 98 checks) |
+| Version | `2.0.0` — **FROZEN** (Oct 1, same-day MAJOR amendment to `1.0.0` after interaction review; see Changelog) |
 | Depends on | `M2M-RHYTHM v1.0.2` (§2–§9 consumed verbatim: same root → same rhythm, always) |
 | Fulfills | `MIDI-PROTOCOL.md` Appendix A reservation |
 | Purpose | Assigns meaning to previously *reserved* bits (root 2–15, leaf 11–18), defines the shoehorn map format, and specifies `.mid` exports with pitches |
@@ -92,58 +92,82 @@ else:          midi = root_midi + intervals[degree % 7]  + 12 * (degree // 7)
 (15-degree ranges cross one octave; degrees 7–14 land above. Frozen from the reference
 script @ `5b59f81`; pitch extraction subsequently fixed to the disjoint bits per §2.)
 
-## 4. SHOEHORN source — the pitch map
+## 4. SHOEHORN source — the melody map (piano roll)
 
-A user-owned mapping from **time to pitch**, independent of instruments and blocks:
+A user-owned piano roll mapping **time → pitch**, independent of instruments and
+blocks. Time runs left→right in eighth-note columns; pitch runs vertically (the
+player shows a 2-octave window, default C2–B3, with an octave shifter — the window
+is view state, not data).
 
-- **Grid:** the 8-bar reference cycle (`cycleTicks = 15360`), quantized to **eighths**
-  → **64 cells of 600 ticks**. Locked for v1 (OP2 resolved: eighths only; a 16th grid
-  would be format-compatible by changing `cellTicks` alone — future MINOR).
-- **Cell value:** MIDI note 21–108, or empty.
-- **Onset pitch:** event with master tick `t` (anchor=0 convention) reads cell
-  `floor((t mod 15360) / cellTicks)`. Pitched at onset; sustained events do not
-  re-pitch mid-note.
-- **Empty-cell resolution — melody-source switch** (OP3 resolved by owner refinement):
-  the player carries a per-session switch `source ∈ {merkle, none}`:
-  1. `source = merkle` → empty-cell onsets take the **owning block's deterministic
-     pitch from §3** (painted cells still override);
-  2. `source = none` → empty-cell onsets take the **voice's default note**.
-  "Fill" (§5) is the act of materializing source (1) into cells as a starting sketch —
-  it does not change what the switch means.
-- **Per-slot transpose applies AFTER the map** (melodic slots only — percussion
-  never pitched, per the standing ruling), then clamps to 21–108.
-- Parts with loops shorter than 8 bars read the same global grid at their phase —
-  a 2-bar part re-visits cells 0–15, 16–31, … each cycle; maps are authored against
-  the cycle, not the part.
+- **The map has its OWN length** (owner ruling: "there will not automatically be
+  8 bars of melody"): `mapBars ∈ {4, 8, 16}`, **default 4**, selectable in the player.
+  `mapTicks = mapBars × 1920`. Columns = `mapBars × 8` eighths of 600 ticks (OP2
+  unchanged: eighths only).
+- **The map loops forever, synced across all instruments:** a note with master tick
+  `t` reads column `floor((t mod mapTicks) / 600)`. Every block — any loop length —
+  sings through the SAME looping map; no block owns a melody, and no rhythm event
+  exists without an underlying map position. An 8-bar block over a 4-bar map plays
+  the melody twice per loop, in phase with the clock.
+- **Column value = pitch stack.** Monophonic by default (owner ruling): a painted
+  column holds exactly one pitch; painting again replaces. An explicit player
+  checkbox enables **polyphony**: a column may hold up to **7 simultaneous pitches**
+  (stack cap 7, performance guard), deduplicated. Turning polyphony off truncates
+  stacks to their lowest pitch.
+- **Onset = all pitches in the column, sounding together** at the rhythm event's
+  timing (the merkle rhythm dictates when; the map dictates what). Pitched at
+  onset; sustained events do not re-pitch mid-note.
+- **Painting semantics:** mouse-down paints immediately (no click needed); a held
+  drag covers every cell crossed (interpolated so fast drags can't skip columns),
+  each cell taking **its own row's pitch** (piano-roll brush — there is no palette).
+  Erase removes that row's pitch from the column's stack (right-drag / clear column).
+- **Empty-column resolution — melody-source switch** (unchanged from v1): the player
+  carries `source ∈ {merkle, none}`:
+  1. `source = merkle` → empty-column onsets take the **owning event's deterministic
+     pitch from §3**;
+  2. `source = none` → empty-column onsets take the **voice's default note**.
+  "Fill" (§5) materializes (1) into cells as a starting sketch; the switch is what
+  live per-block melody behavior relies on — painted cells always override.
+- **Per-slot transpose applies AFTER the map** to every pitch of the stack (melodic
+  slots only — percussion never pitched, standing ruling), then folds 21–108 (§3).
 
 ## 5. Composition: merkle-fill
 
-`fillMap(block B)`: run B's rhythm events through §3 and write each event's pitch into
-its §4 cell; cells with no event under B are left untouched (user paint preserved).
-Fill is **replace-cells-that-are-written**, not clear-all. In live mode the player
-auto-refills from the newest arriving block (player behavior — the *rule* lives here:
-fill output must depend only on B's root + existing map).
+`fillMap(block B)`: run B's rhythm events through §3 and paint each event's pitch
+into its column `floor((o.tick mod mapTicks) / 600)`; cells with no event under B
+are left untouched. Because the map wraps at its own length, a block longer than
+the map contributes its **whole** rhythm, wrapped (collisions: monophonic → last
+written pitch wins; polyphonic → pitches union, cap 7). Fill respects the current
+mode and never clears first. Rotation in live mode needs no re-fill — the map is
+global and blocks are already singing through it.
 
 ## 6. Mapped `.mid` export
 
 Container per rhythm §10 (format 1, single track, division 480, identical tempo/meta,
 identical delta sequence — timing is byte-identical to the canonical drum file), with:
 
-- `note_on`/`note_off` on **channel 0**, key = §3/§4 pitch (source-labeled), velocity 80;
+- `note_on`/`note_off` on **channel 0**, keys = the column's pitch **set** (1–7
+  simultaneous, §4), velocity 80. Normative event order per mapped event:
+  all note-ons ascending by key at delta 0, then all note-offs at delta = sounding
+  (first carries it, rest delta 0), then gap-offs likewise; running status applies
+  like the reference mido layout. Monophonic (k = 1) collapses exactly to the notes
+  script's per-note layout — fixture-verified byte-for-byte. Polyphonic ordering is
+  JS-reference-implementation until a Python shoehorn exporter exists.
 - one `program_change` after tempo, **program 0** (OP4 resolved: fixed Acoustic Grand —
   the file is a melody sketch; users pick sounds in their DAW);
 - filename: canonical rhythm files keep §10 names; mapped exports use
-  `{height}_merkle_{prefix8}_notes.mid`, or `…_shoehorn_{mapid}.mid` where
-  `mapid` = first 4 hex of SHA-256 over the map payload (§7) — provenance without
-  the URL;
+  `{height}_merkle_{prefix8}_notes.mid` — provenance without the URL;
 - **the canonical drum download (§10) is untouched** — mapped export is an explicit,
   separate action.
 
 ## 7. Session encoding
 
-`&p=` = base64url of 64 bytes (one per eighth cell; 0 = empty, else MIDI note 1–255 →
-values 21–108 in practice). Omitted when untouched. A map in a shared URL restores the
-melody arrangement exactly — pitch is now part of a session's identity.
+`&q=` = map length in bars (4|8|16; default 4 when absent with `&p`). `&o=p` =
+polyphony on. `&p=` = base64url of the **count-prefixed column payload**: per
+column, one byte `n` (0–7) followed by `n` pitch bytes (21–108). Omitted entirely
+when no cell is painted. **Legacy:** `&p=` without `&q=` whose payload is exactly
+64 bytes decodes as v1 mono columns over an 8-bar map (kept so early links still
+open). A map in a shared URL restores the melody arrangement exactly — pitch is
+now part of a session's identity.
 
 ## 8. Verification (done at freeze)
 
@@ -151,23 +175,49 @@ melody arrangement exactly — pitch is now part of a session's identity.
 6 roots + mapped-SMF byte reference for the wrapped root; `tests/verify.mjs` asserts
 Python ≡ JS — **PASS, 98 checks** at freeze time.
 
-## 9. Freeze record (0.3.0-DRAFT → 1.0.0, Oct 1)
+## 9. Freeze record
+
+### 2.0.0 (Oct 1, same-day MAJOR amendment to 1.0.0)
+Owner interaction review after first hands-on use. Output-affecting decisions — MAJOR
+per §1 governance, taken deliberately while the only consumer is our own repo:
+- [x] Map has its own selectable length (4/8/16 bars, default 4) and **loops synced
+      across all instruments** — replaces the fixed 8-bar-cycle grid of 1.0.0
+- [x] Monophonic default; optional polyphony checkbox; ≤7 pitches/column, played as
+      simultaneous chords at merkle-rhythm timing
+- [x] Piano-roll geometry (time left→right, pitch vertically stacked); 2-octave view
+      window (default C2–B3) + octave shifter; brush paints at the row under the
+      cursor; stroke interpolation; right-drag removes that pitch
+- [x] Export defines stack ordering (§6); mono byte reference unchanged
+- [x] Session encoding v2: count-prefixed columns `&p=` + `&q=` + `&o=p`; legacy
+      64-byte `&p=` links still decode (v1 mono, 8 bars)
+- [x] All behavior verified headless (loop wrap, mono replace, poly cap, resize
+      preservation, erase, transpose fold, legacy decode, export byte order)
+
+### 1.0.0 (Oct 1, superseded same day)
 
 - [x] Open Point 1 decided — **fix (Option A), Sep 30 owner ruling**; doc pins disjoint bits 11–18
 - [x] Open Point 2 decided — eighths only (64 × 600 ticks); 16ths deferred as format-compatible option
 - [x] Open Point 3 decided — melody-**source switch** (`merkle | none`) resolves empty cells; painted cells override in both modes
 - [x] Open Point 4 decided — mapped export uses fixed program 0, channel 0
 - [x] `notes-from-merkle.py` patched to match and cross-checked (PB ⟂ duration proven; rhythm identical between scripts on all 6 fixture roots)
-- [x] Melodic fixtures + verify.mjs extension passing (98/98)
+- [x] Melodic fixtures + verify.mjs extension passing (98/98 — still passing at 2.0.0)
 - [x] Player paint UI exists and round-trips through `&p=` (map panel + state round-trip verified)
 
 *Freeze stance notes: the two design calls that shaped this doc before drafting:
 shoehorn is instrument-independent (one global map), and percussion never receives
 pitch. Future changes follow §1 governance (MAJOR = output change, MINOR = additive,
-PATCH = editorial).*
+PATCH = editorial). Lesson logged with 2.0.0: interaction review should precede
+freeze when the feature is brand-new UI.*
 
 ## Changelog
 
+- `2.0.0` — **Freeze (MAJOR, same-day amendment).** Piano-roll model per owner
+  rulings: own-length looping map (4/8/16 bars, default 4) synced across
+  instruments; monophonic default with ≤7-pitch chord stacks via explicit
+  checkbox; drag-painted brush with row-based pitch; stack-aware export ordering
+  and session encoding (`&q`, `&o=p`, count-prefixed `&p`, legacy fallback intact).
+  Deterministic §3 melody layer and rhythm invariants untouched; 98-check fixtures
+  still pass.
 - `1.0.0` — **Freeze.** All OP rulings in, both gates green. Pitched-layer derivation
   is now immutable under `1.x`.
 

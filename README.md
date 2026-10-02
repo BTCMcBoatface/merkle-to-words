@@ -65,7 +65,7 @@ Each leaf's first 11 bits (0–2047) map to a note duration via a weighted looku
 
 If no merkle root is provided, the script fetches the latest Bitcoin block from the Blockstream API, using its merkle root and displaying the block hash for reference. Falls back to a default value if the API is unreachable.
 
-The full cross-language specification for this pipeline is [`MIDI-PROTOCOL.md`](MIDI-PROTOCOL.md) (`M2M-RHYTHM v1.0.2`) — the contract that both this Python script and any future implementation (e.g., the JavaScript web player) conform to. Its §7.4 rules (cyclic leaf reuse, no zero-length notes) are implemented; files in `midi-files/` generated before the fix predate the patch. The pitched layer (melody + shoehorn map + mapped export) is frozen separately in [`MIDI-NOTES-PROTOCOL.md`](MIDI-NOTES-PROTOCOL.md) (`M2M-NOTES v1.0.0`).
+The full cross-language specification for this pipeline is [`MIDI-PROTOCOL.md`](MIDI-PROTOCOL.md) (`M2M-RHYTHM v1.0.2`) — the contract that both this Python script and any future implementation (e.g., the JavaScript web player) conform to. Its §7.4 rules (cyclic leaf reuse, no zero-length notes) are implemented; files in `midi-files/` generated before the fix predate the patch. The pitched layer (melody + shoehorn piano roll + mapped export) is frozen separately in [`MIDI-NOTES-PROTOCOL.md`](MIDI-NOTES-PROTOCOL.md) (`M2M-NOTES v2.0.0`).
 
 ## Web player (merkle ensemble)
 
@@ -77,7 +77,7 @@ A browser-based ensemble player lives in [`docs/`](docs/) and is served by GitHu
 - **Downloads** — any block's pattern downloads as a protocol-conformant `.mid` (byte-identical to the Python reference output) for use in other DAWs.
 - **LIVE mode** — arm the ◉ button and the player polls the chain once a minute; when a real new block arrives it evicts the oldest, places the newcomer, and rotates every block one instrument forward. Rotation only ever happens on a real block — never a timer. Any manual drag disarms it; re-arming continues from your arrangement.
 - **Snapshots** — named saves of the full arrangement (blocks, slots, map, tempo) restorable from the shelf panel.
-- **Melody map (M2M-NOTES v1)** — paint pitches onto a 64-step eighth grid over the 8-bar cycle; toggle the melody source between your paint and each block's deterministic merkle melody; "fill from block" seeds the grid from a block's own melody. "⤓ notes" exports a mapped `.mid` — identical rhythm, pitched — while the canonical drum download stays untouched.
+- **Melody map (M2M-NOTES v2)** — piano roll: time left→right, pitch up↕down in a 2-octave window with octave shifter; paint on mouse-down and drag across the grid — every cell crossed takes its row's pitch (no palette). The map loops at its own selectable length (4/8/16 bars, default 4), in sync across every instrument. Monophonic by default; check **chords** to stack up to 7 pitches per column, played together on the merkle rhythm. "Fill from block" seeds the grid from a block's deterministic merkle melody; the source toggle picks melody-vs-voice-default for unpainted cells. "⤓ notes" exports a mapped `.mid` — identical rhythm, pitched — while the canonical drum download stays untouched.
 
 **Verify the JS matches Python** (the protocol's conformance test):
 

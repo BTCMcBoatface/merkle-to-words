@@ -18,13 +18,14 @@
 
 import { BAR_TICKS, NOTE_VELOCITY } from "./protocol.js";
 import { getVoice, VOICES } from "./synth.js";
-import { GRID_TICKS, CELL_TICKS, foldMidi } from "./notes.js";
+import { CELL_TICKS, foldMidi, mapTicksFor, POLY_STACK_CAP, DEFAULT_MAP_BARS, MAP_BAR_OPTIONS } from "./notes.js";
 
 const PPQ = 480; // §5 ticks per quarter
 const tpsFor = (bpm) => (bpm * PPQ) / 60; // ticks/sec = 960 at 120 BPM
 const LOOKAHEAD_SEC = 0.12;
 const SCHED_INTERVAL_MS = 25;
 const REFERENCE_CYCLE = BAR_TICKS * 8; // 15360: max current loop, floor for master cycle
+const MAP_BAR_SET = new Set(MAP_BAR_OPTIONS);
 
 export const SLOT_INSTRUMENTS = VOICES.map((v) => v.id); // 7 slots, fixed order
 export const MAX_BLOCKS = 8;
@@ -46,9 +47,18 @@ export class Ensemble {
     this.slots = SLOT_INSTRUMENTS.map((voiceId) => ({
       voiceId, block: null, part: null, muted: false, transpose: 0,
     }));
-    // M2M-NOTES draft state (render-time; exports are an explicit separate action):
-    this.map = new Uint8Array(GRID_TICKS / CELL_TICKS); // 64 cells: 0 = empty, else MIDI note
-    this.melodySource = "none"; // 'merkle' | 'none' (OP3: source switch)
+    // ── M2M-NOTES v2 melody map (render-time; exports are explicit actions) ──
+    // cells[col] = stack of MIDI pitches (21–108); [] = empty column.
+    // The map has its OWN length (4/8/16 bars), loops forever, synced across all
+    // instruments: column = floor((t mod mapTicks) / 600) on the MASTER clock.
+    this.polyphony = false;        // false: one pitch per column (replace); true: stacks ≤7
+    this.mapBars = DEFAULT_MAP_BARS;
+    this.cells = this._makeCells(DEFAULT_MAP_BARS);
+    this.melodySource = "none"; // 'merkle' | 'none' (empty-column resolution)
+  }
+
+  _makeCells(bars) {
+    return Array.from({ length: bars * 8 }, () => []);
   }
 
   // ── change notifications ──
@@ -110,31 +120,55 @@ export class Ensemble {
     this.emit();
   }
 
-  // ── melody map + source (M2M-NOTES draft §4; player-side) ──
-  setMap(arr) {
-    if (arr && arr.length === this.map.length) {
-      for (let i = 0; i < arr.length; i++) {
-        const v = arr[i] | 0;
-        this.map[i] = (v >= 21 && v <= 108) ? v : 0;
-      }
-    }
+  // ── melody map + source (M2M-NOTES v2; player-side) ──
+  setMapBars(bars) {
+    if (!MAP_BAR_SET.has(bars) || bars === this.mapBars) return;
+    const prev = this.cells;
+    this.mapBars = bars;
+    this.cells = this._makeCells(bars);           // resize KEEPS overlapping columns
+    for (let i = 0; i < Math.min(prev.length, this.cells.length); i++) this.cells[i] = prev[i];
     this.emit();
   }
-  clearMap() { this.map.fill(0); this.emit(); }
+  setPolyphony(on) {
+    this.polyphony = !!on;
+    if (!this.polyphony) for (const c of this.cells) if (c.length > 1) c.length = 1;
+    this.emit();
+  }
+  // paint one column: n = MIDI pitch, or null/0 = clear the whole column
+  paintCell(col, n) {
+    const c = this.cells[col];
+    if (!c) return;
+    if (!n) { c.length = 0; return; }
+    const p = foldMidi(n);
+    if (this.polyphony) {
+      if (!c.includes(p) && c.length < POLY_STACK_CAP) { c.push(p); c.sort((a, b) => a - b); }
+    } else if (c[0] !== p) {
+      c.length = 0; c.push(p);
+    }
+  }
+  eraseCellPitch(col, n) {
+    const c = this.cells[col];
+    if (!c || !n) return;
+    const i = c.indexOf(n);
+    if (i >= 0) c.splice(i, 1);
+  }
+  clearMap() { for (const c of this.cells) c.length = 0; this.emit(); }
   setMelodySource(s) {
     this.melodySource = s === "merkle" ? "merkle" : "none";
     this.emit();
   }
-  // resolve a melodic onset's pitch: painted cell → source-merkle melody → voice default
-  _pitchFor(absTick, part, evIdx, voice, slot) {
-    const cell = Math.floor((absTick % GRID_TICKS) / CELL_TICKS);
-    const painted = this.map[cell];
+  // resolve a melodic onset's pitch STACK: painted column → source-merkle melody
+  // of this event → voice default; per-slot transpose folds each pitch last
+  _pitchStackFor(absTick, part, evIdx, voice, slot) {
+    const col = Math.floor((absTick % mapTicksFor(this.mapBars)) / CELL_TICKS);
+    const stack = this.cells[col];
     let base;
-    if (painted) base = painted;
+    if (stack && stack.length) base = stack;
     else if (this.melodySource === "merkle" && part.block && part.block.melody)
-      base = part.block.melody[evIdx % part.block.melody.length];
-    else base = voice.defaultNote;
-    return foldMidi(base + (slot.transpose | 0));
+      base = [part.block.melody[evIdx % part.block.melody.length]];
+    else base = [voice.defaultNote];
+    const tr = slot.transpose | 0;
+    return tr ? base.map((m) => foldMidi(m + tr)) : base.slice();
   }
 
   // ── tempo (player-only; the derived stream and .mid download always
@@ -288,8 +322,12 @@ export class Ensemble {
         if (abs >= p.entry && abs >= cur - 2) {
           const at = Math.max(this._timeAt(abs), now + 0.004);
           const dur = o.soundingTicks / this._tpsBase;
-          const midi = voice.melodic ? this._pitchFor(abs, p, evIdx, voice, s) : 0;
-          voice.trigger(ctx, this.bus, at, dur, NOTE_VELOCITY, midi);
+          if (voice.melodic) {
+            for (const midi of this._pitchStackFor(abs, p, evIdx, voice, s))
+              voice.trigger(ctx, this.bus, at, dur, NOTE_VELOCITY, midi);
+          } else {
+            voice.trigger(ctx, this.bus, at, dur, NOTE_VELOCITY, 0);
+          }
         }
         if (++p.cursor.idx >= p.onsets.length) { p.cursor.idx = 0; p.cursor.rep++; }
       }

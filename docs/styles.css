@@ -123,29 +123,16 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: var
 }
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.25; } }
 
-/* melody map (M2M-NOTES draft) */
+/* melody map (M2M-NOTES v2 piano roll) */
 .draft { color: var(--accent2); font-size: 10px; text-transform: none; letter-spacing: 0; }
-.btn.mini { font-size: 11px; padding: 3px 8px; margin-left: 8px; vertical-align: middle; }
+.btn.mini { font-size: 11px; padding: 3px 8px; vertical-align: middle; }
 .btn.mini.on { border-color: var(--accent2); color: var(--accent2); }
-#palette { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0 8px; }
-#palette button {
-  background: var(--card); border: 1px solid var(--line); color: var(--dim);
-  border-radius: 6px; padding: 3px 5px; font-size: 10px; cursor: pointer; min-width: 26px;
-}
-#palette button.sel { border-color: var(--accent2); color: var(--accent2); background: var(--card2); }
-#palette button.erase.sel { border-color: var(--danger); color: var(--danger); }
-#mapGrid {
-  display: grid; grid-template-columns: repeat(32, 1fr); gap: 2px;
-  overflow-x: auto; padding-bottom: 4px;
-}
-#mapGrid .cell {
-  min-width: 14px; height: 44px; background: var(--card); border: 1px solid var(--line);
-  border-radius: 4px; color: var(--text); font-size: 8px; cursor: pointer;
-  display: flex; align-items: flex-end; justify-content: center; padding-bottom: 2px;
-  writing-mode: vertical-rl;
-}
-#mapGrid .cell.barline { border-left: 2px solid var(--dim); }
-#mapGrid .cell.filled { background: #2a4a63; border-color: var(--accent); color: var(--accent); }
+.btn.mini.sel { border-color: var(--accent); color: var(--accent); background: var(--card2); }
+#mapBar { display: flex; gap: 8px; margin: 4px 0 8px; flex-wrap: wrap; align-items: center; }
+#mapBar .seg { display: flex; gap: 4px; }
+#mapBar .chk { font-size: 11px; color: var(--dim); display: flex; align-items: center; gap: 4px; }
+#mapWrap { overflow-x: auto; border: 1.5px solid var(--line); border-radius: 10px; background: #12141b; }
+#mapCanvas { display: block; touch-action: none; cursor: crosshair; }
 
 #mapRow, #snapRow { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; align-items: center; }
 #fillSelect {

@@ -6,9 +6,9 @@ Tools for converting a Bitcoin merkle root (256-bit hash) into human-readable wo
 ## Files
 - `words-from-merkle.py` — Converts merkle root to 21-word BIP-39 phrase
 - `midi-from-merkle.py` — Converts merkle root to rhythmic MIDI via merkle tree descent
-- `notes-from-merkle.py` — Converts merkle root to pitched MIDI melody; shares the MIDI-PROTOCOL.md §7.4 rhythm engine and implements the now-frozen M2M-NOTES v1.0.0 pitch rules (disjoint bits 11–18)
+- `notes-from-merkle.py` — Converts merkle root to pitched MIDI melody; shares the MIDI-PROTOCOL.md §7.4 rhythm engine and implements the frozen M2M-NOTES v2.0.0 deterministic pitch rules (disjoint bits 11–18)
 - `MIDI-PROTOCOL.md` — Canonical cross-language spec for the MIDI pipeline (v1.0.2, `M2M-RHYTHM`); the contract Python and future JS implementations must both conform to
-- `MIDI-NOTES-PROTOCOL.md` — Pitched layer + shoehorn pitch map + mapped export (`M2M-NOTES`, v1.0.0 — **FROZEN Oct 1**; OP1 bit-overlap fixed, all rulings in, 98-check fixtures)
+- `MIDI-NOTES-PROTOCOL.md` — Pitched layer + shoehorn piano roll + mapped export (`M2M-NOTES`, v2.0.0 — **FROZEN Oct 1**; same-day MAJOR amendment to 1.0.0 after interaction review)
 - `PROJECT.md` — Living project record: status snapshot, decision log, roadmap, and the rules for adding features. Read it first when picking up roadmap/feature work
 - `docs/` — Web MIDI ensemble player (GitHub Pages, vanilla ESM; see "Web player" section below)
 - `make-fixtures.py` + `tests/` — Golden-vector cross-language sync check (Python reference → JSON fixtures → `node tests/verify.mjs` asserts JS matches)
@@ -65,7 +65,7 @@ Requires: `pip install mido`
 Vanilla ESM, no build step, dark-mode only, mobile-first. Serves from `docs/`
 (Pages: Settings → Pages → Deploy from branch → `main` / `/docs`).
 Spec contract: `MIDI-PROTOCOL.md` v1.0.2 (`M2M-RHYTHM`) + `MIDI-NOTES-PROTOCOL.md`
-v1.0.0 (`M2M-NOTES`, FROZEN Oct 1); player semantics: render-time instrument
+v2.0.0 (`M2M-NOTES`, FROZEN Oct 1); player semantics: render-time instrument
 choice lives OUTSIDE the protocol (§11) — blocks always derive E(R) exactly.
 
 | File | Role |
@@ -74,10 +74,10 @@ choice lives OUTSIDE the protocol (§11) — blocks always derive E(R) exactly.
 | `docs/js/smf.js` | §10 writer WITH running status → downloaded `.mid` is byte-identical to mido reference. Blob download, §10 naming. |
 | `docs/js/api.js` | Blockstream on-request only: `fetchTip()`, `fetchByHeight(h)`. No polling. |
 | `docs/js/synth.js` | 7 Web Audio 808-flavored voices (kick, snare, hats×2, lead, bass, organ). Trigger sig `(ctx,dest,time,dur,vel,midiNote)` — melodic voices consume the pitch resolved by the engine's melody-map layer. |
-| `docs/js/notes.js` | M2M-NOTES v1.0.0 implementation: `pitchByte` (disjoint bits 11–18), `deriveScaleParams` (root bits 2–15), degree→MIDI, `foldMidi` 21–108, grid constants, `deriveMelody()`. Fixture-verified against Python. |
-| `docs/js/engine.js` | Master clock (ticks = s×960, tempo = piecewise segments), 0.12 s lookahead scheduler. 7 slots × 1 block, mute flag (cursor-preserving), per-slot transpose, **LIVE `rotateOneStep()`** (parts travel with blocks — timing untouched), melody-map `_pitchFor()` (painted cell → source switch → transpose fold). Phase policy parameterized (`anchorTick` 0 = anchored; head-start entry); `resyncAllToTop()`; modes independent/master. cycleLen COMPUTED — never hardcoded. |
-| `docs/js/state.js` | `?v=1&b=height~root64,...&s=slotmap&m=ind|master[&t=][&u=][&p=b64url-map][&g=m]` + localStorage mirror. Full roots + map stored → restore derives locally, zero API calls. |
-| `docs/js/ui.js`, `index.html`, `styles.css` | Slots grid + shelf (max 8 blocks, 8th parks on shelf), drag AND tap-select→tap-slot move, **LIVE toggle** (60 s poll while armed, evict-oldest, arrival-only rotation, any manual placement disarms), **snapshots** (named, localStorage, cap 20), **melody-map paint panel** (palette + fill-from-block + clear + source switch), transport bar (play/stop, mode, ⟲ re-align, BPM box, copy link, ✕ reset), height fetch + "get latest", per-block ⤓ `.mid` (canonical) + ⤓ `notes` (mapped export). iOS: AudioContext created inside Play gesture. |
+| `docs/js/notes.js` | M2M-NOTES v2.0.0 implementation: `pitchByte` (disjoint bits 11–18), `deriveScaleParams` (root bits 2–15), degree→MIDI, `foldMidi`, grid constants (4/8/16 bars), `deriveMelody()`, count-prefixed stack codec `encodeCells/decodeCells` (+ legacy v1 decode). Fixture-verified against Python. |
+| `docs/js/engine.js` | Master clock (ticks = s×960, tempo = piecewise segments), 0.12 s lookahead scheduler. 7 slots × 1 block, mute flag (cursor-preserving), per-slot transpose, **LIVE `rotateOneStep()`** (parts travel with blocks — timing untouched), melody map `cells[col]` = pitch stacks (mono default, poly ≤7; `paintCell`/`eraseCellPitch`/`setMapBars` resize-keeps/`setPolyphony`), `_pitchStackFor()` (painted stack → source switch → transpose fold; map loops at its own length, synced across parts). Phase policy parameterized (`anchorTick` 0 = anchored; head-start entry); `resyncAllToTop()`; modes independent/master. cycleLen COMPUTED — never hardcoded. |
+| `docs/js/state.js` | `?v=1&b=height~root64,...&s=slotmap&m=ind|master[&t=][&u=][&p=cells-b64][&q=4|8|16][&o=p][&g=m]` + localStorage mirror. Full roots + map stored → restore derives locally, zero API calls; legacy v1 `&p` (64 flat bytes, no `&q`) still decodes. |
+| `docs/js/ui.js`, `index.html`, `styles.css` | Slots grid + shelf (max 8 blocks, 8th parks on shelf), drag AND tap-select→tap-slot move, **LIVE toggle** (60 s poll while armed, evict-oldest, arrival-only rotation, any manual placement disarms), **snapshots** (named, localStorage, cap 20), **melody map piano roll** (canvas: time→right eighths, pitch↑down 2-octave window + 8vb shifter, drag-paint brush with interpolation, right-drag erase, 4/8/16-bar selector, chords checkbox, fill-from-block, clear, source switch), transport bar (play/stop, mode, ⟲ re-align, BPM box, copy link, ✕ reset), height fetch + "get latest", per-block ⤓ `.mid` (canonical) + ⤓ `notes` (mapped export). iOS: AudioContext created inside Play gesture. |
 
 **Cross-language sync check (the protocol made this mechanical):**
 - `make-fixtures.py` (needs mido — run under the venv or `pip install mido`):
@@ -86,7 +86,7 @@ choice lives OUTSIDE the protocol (§11) — blocks always derive E(R) exactly.
   reference + **M2M-NOTES layer per fixture** (scale params, pitchBytes, melody32) +
   mapped-SMF byte reference for the wrapped root.
 - `node tests/verify.mjs` → asserts JS E(R)/melody + both SMF writers match fixtures.
-  Current status: **PASS, 98/98 checks** (M2M-RHYTHM/1.0.2 + M2M-NOTES/1.0.0).
+  Current status: **PASS, 98/98 checks** (M2M-RHYTHM/1.0.2 + M2M-NOTES/2.0.0).
 - App smoke: all 10 assets serve 200 over `python3 -m http.server -d docs 8123`
   (localhost = secure context, WebCrypto OK); modules import clean in Node;
   ui.js syntax-checked. Desktop-browser interactive pass NOT yet done (no browser

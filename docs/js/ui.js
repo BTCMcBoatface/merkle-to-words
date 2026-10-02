@@ -3,7 +3,7 @@
 // URL/localStorage; engine.js handles audio, placement, rotation mechanics.
 
 import { derivePattern, PROTOCOL_ID, PROTOCOL_VERSION } from "./protocol.js";
-import { deriveMelody, noteName, CELL_TICKS, MAP_CELLS } from "./notes.js";
+import { deriveMelody, noteName, CELL_TICKS } from "./notes.js";
 import { fetchTip, fetchByHeight } from "./api.js";
 import { downloadMidi, downloadMidiMapped } from "./smf.js";
 import { Ensemble, MAX_BLOCKS } from "./engine.js";
@@ -20,8 +20,6 @@ let busy = false;
 let liveTimer = null;
 let livePrimed = false;    // first tick after arming just baselines the height
 let lastTipHeight = null;
-let paintNote = 0;         // 0 = erase mode; else MIDI note stamped on tap
-let paletteShift = 0;      // palette octave offset
 
 const $ = (s) => document.querySelector(s);
 const slotsEl = $("#slots"), shelfEl = $("#shelf"), statusEl = $("#status");
@@ -51,7 +49,9 @@ function view() {
     mode: engine.mode,
     transpose: engine.slots.map((s) => s.transpose | 0),
     bpm: engine.bpm,
-    map: Array.from(engine.map),
+    cells: engine.cells.map((c) => c.slice()),
+    mapBars: engine.mapBars,
+    polyphony: engine.polyphony,
     source: engine.melodySource,
   };
 }
@@ -153,61 +153,150 @@ liveBtn.addEventListener("click", () => {
   if (engine.live) disarmLive(); else armLive();
 });
 
-// ── melody map panel ──
+// ── melody map panel (M2M-NOTES v2 piano roll) ──
+// Time left→right (eighth columns over the map's own 4/8/16-bar length), pitch
+// up→down (2-octave window, default C2–B3, ◀/▶ octave shifter). Mouse-down paints
+// immediately and a held drag covers everything it crosses (interpolated);
+// right-drag removes that pitch from the column. The map is GLOBAL truth: it
+// loops at its own length, in sync across every instrument; drum slots never.
+const ROWS = 24, ROW_H = 14, GUT = 46, CELL_MIN_W = 16;
+const BLACK_SET = new Set([1, 3, 6, 8, 10]);
+let octShift = 0;                       // view offset: rows shown (not data)
+let mapGeom = { cellW: CELL_MIN_W, cols: 32 };
+let stroking = false, eraseStroke = false, lastXY = null, strokeDirty = false;
+
+const viewTop = () => 59 + 12 * octShift;   // top pitch of window (B3 default)
+
 srcBtn.addEventListener("click", () => {
   engine.setMelodySource(engine.melodySource === "merkle" ? "none" : "merkle");
   persist(); render();
 });
 $("#clearMapBtn").addEventListener("click", () => { engine.clearMap(); persist(); render(); });
+$("#barsSeg").querySelectorAll("button").forEach((btn) =>
+  btn.addEventListener("click", () => {
+    engine.setMapBars(parseInt(btn.dataset.bars, 10));
+    persist(); render();
+  }));
+$("#polyChk").addEventListener("change", (e) => {
+  engine.setPolyphony(e.target.checked); persist(); render();
+});
+$("#octDown").addEventListener("click", () => { octShift = Math.max(-1, octShift - 1); drawMap(); });
+$("#octUp").addEventListener("click", () => { octShift = Math.min(4, octShift + 1); drawMap(); });
+
 $("#fillBtn").addEventListener("click", () => {
   const idx = parseInt($("#fillSelect").value, 10);
   const b = blocks[idx];
   if (!b || !b.melody) { setStatus("pick a block with a melody to fill", true); return; }
-  const map = Array.from(engine.map);
+  const cols = engine.cells.length;
   b.pattern.onsets.forEach((o, i) => {
-    const cell = Math.floor((o.tick % (CELL_TICKS * MAP_CELLS)) / CELL_TICKS);
-    if (o.tick < b.pattern.loopTicks) map[cell] = b.melody[i % b.melody.length];
+    engine.paintCell(Math.floor((o.tick % (cols * CELL_TICKS)) / CELL_TICKS),
+      b.melody[i % b.melody.length]);
   });
-  engine.setMap(map);
-  setStatus(`map filled from #${b.height ?? b.rootHex.slice(0, 8)} (${b.scale.modeName} ${b.scale.rootNoteName})`);
+  setStatus(`map filled from #${b.height ?? b.rootHex.slice(0, 8)} (${b.scale.rootNoteName} ${b.scale.modeName})`);
   persist(); render();
 });
 
-function renderMap() {
-  // palette: erase + octave shifts + 24 chromatic buttons (C3..B4, shiftable)
-  const pal = $("#palette");
-  pal.textContent = "";
-  const addChip = (label, cls, isSel, fn) => {
-    const b = document.createElement("button");
-    b.textContent = label;
-    if (cls) b.className = cls;
-    if (isSel) b.classList.add("sel");
-    b.addEventListener("click", fn);
-    pal.appendChild(b);
-  };
-  addChip("erase", "erase", paintNote === 0, () => { paintNote = 0; render(); });
-  addChip("◀8vb", "", paletteShift < 0, () => { paletteShift = Math.max(-24, paletteShift - 12); render(); });
-  for (let n = 48 + paletteShift; n <= 71 + paletteShift; n++) {
-    addChip(noteName(n), "", paintNote === n, () => { paintNote = n; render(); });
-  }
-  addChip("8vb▶", "", paletteShift > 0, () => { paletteShift = Math.min(24, paletteShift + 12); render(); });
+function cellFromXY(x, y) {
+  const { cellW, cols } = mapGeom;
+  if (x < GUT) return null;
+  const col = Math.floor((x - GUT) / cellW);
+  const row = Math.floor(y / ROW_H);
+  if (col < 0 || col >= cols || row < 0 || row >= ROWS) return null;
+  const pitch = viewTop() - row;
+  if (pitch < 21 || pitch > 108) return null;
+  return { col, pitch };
+}
 
-  // grid: 64 cells in two 32-cell rows (4 bars each), barline every 8
-  const grid = $("#mapGrid");
-  grid.textContent = "";
-  engine.map.forEach((v, idx) => {
-    const c = document.createElement("div");
-    c.className = "cell" + (v ? " filled" : "") + (idx % 8 === 0 ? " barline" : "");
-    c.textContent = v ? noteName(v) : "";
-    c.title = `eighth ${idx + 1}`;
-    c.addEventListener("click", () => {
-      const map = Array.from(engine.map);
-      map[idx] = paintNote;
-      engine.setMap(map);
-      persist(); render();
-    });
-    grid.appendChild(c);
+function strokeAt(x, y) {
+  const c = cellFromXY(x, y);
+  if (!c) return;
+  if (eraseStroke) engine.eraseCellPitch(c.col, c.pitch);
+  else engine.paintCell(c.col, c.pitch);
+  strokeDirty = true;
+}
+
+function drawMap() {
+  const canvas = $("#mapCanvas"), wrap = $("#mapWrap");
+  const cols = engine.cells.length;
+  const cellW = Math.max(CELL_MIN_W, Math.floor((wrap.clientWidth - GUT - 6) / cols));
+  mapGeom = { cellW, cols };
+  canvas.width = GUT + cellW * cols;
+  canvas.height = ROWS * ROW_H + 2;
+  const g = canvas.getContext("2d");
+  g.clearRect(0, 0, canvas.width, canvas.height);
+
+  for (let r = 0; r < ROWS; r++) {
+    const pitch = viewTop() - r;
+    const black = BLACK_SET.has(((pitch % 12) + 12) % 12);
+    g.fillStyle = black ? "#12141b" : "#1e2330";
+    g.fillRect(0, r * ROW_H, canvas.width, ROW_H);
+    if (!black) {
+      g.fillStyle = pitch % 12 === 0 ? "#dfe6f0" : "#8a93a6";
+      g.font = "9px ui-monospace, Menlo, monospace";
+      g.fillText(noteName(pitch), 4, r * ROW_H + ROW_H - 4);
+    }
+    if (pitch % 12 === 0) {   // C baselines
+      g.strokeStyle = "#2a3040"; g.lineWidth = 1;
+      g.beginPath(); g.moveTo(GUT, (r + 1) * ROW_H + 0.5); g.lineTo(canvas.width, (r + 1) * ROW_H + 0.5); g.stroke();
+    }
+  }
+  for (let col = 0; col <= cols; col++) {
+    const x = GUT + col * cellW + 0.5;
+    g.strokeStyle = col % 8 === 0 ? "#4a5468" : (col % 2 === 0 ? "rgba(42,48,64,.9)" : "rgba(42,48,64,.4)");
+    g.lineWidth = col % 8 === 0 ? 1.4 : 1;
+    g.beginPath(); g.moveTo(x, 0); g.lineTo(x, ROWS * ROW_H); g.stroke();
+  }
+  g.fillStyle = "#7dd3fc";
+  engine.cells.forEach((stack, col) => {
+    for (const p of stack) {
+      const row = viewTop() - p;
+      if (row < 0 || row >= ROWS) continue;      // painted but outside the window
+      g.fillRect(GUT + col * cellW + 1, row * ROW_H + 1, Math.max(2, cellW - 2), ROW_H - 2);
+    }
   });
+  g.fillStyle = "#8a93a6"; g.font = "8px sans-serif";
+  for (let bar = 0; bar < cols / 8; bar++) g.fillText(String(bar + 1), GUT + bar * 8 * cellW + 2, ROWS * ROW_H - 2);
+}
+
+function wireMapCanvas() {
+  const canvas = $("#mapCanvas");
+  canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+  canvas.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    const r = canvas.getBoundingClientRect();
+    stroking = true; eraseStroke = (e.button === 2); strokeDirty = false;
+    lastXY = [e.clientX - r.left, e.clientY - r.top];
+    strokeAt(...lastXY);
+    try { canvas.setPointerCapture(e.pointerId); } catch (err) { }
+    drawMap();
+  });
+  canvas.addEventListener("pointermove", (e) => {
+    if (!stroking) return;
+    const r = canvas.getBoundingClientRect();
+    const xy = [e.clientX - r.left, e.clientY - r.top];
+    // interpolate between samples so fast drags never skip columns
+    const [x0, y0] = lastXY, [x1, y1] = xy;
+    const dist = Math.hypot(x1 - x0, y1 - y0);
+    const steps = Math.max(1, Math.ceil(dist / (mapGeom.cellW / 3)));
+    for (let k = 1; k <= steps; k++)
+      strokeAt(x0 + (x1 - x0) * k / steps, y0 + (y1 - y0) * k / steps);
+    lastXY = xy;
+    if (strokeDirty) { drawMap(); strokeDirty = false; }
+  });
+  const endStroke = () => {
+    if (!stroking) return;
+    stroking = false; eraseStroke = false;
+    persist(); render();
+  };
+  canvas.addEventListener("pointerup", endStroke);
+  canvas.addEventListener("pointercancel", endStroke);
+}
+
+function renderMap() {
+  // control sync
+  $("#polyChk").checked = engine.polyphony;
+  document.querySelectorAll("#barsSeg button").forEach((btn) =>
+    btn.classList.toggle("sel", parseInt(btn.dataset.bars, 10) === engine.mapBars));
 
   // fill selector
   const sel = $("#fillSelect");
@@ -221,15 +310,18 @@ function renderMap() {
   });
   if (prevVal && blocks[parseInt(prevVal, 10)]) sel.value = prevVal;
   else if (blocks.length) sel.value = String(blocks.length - 1);
+
+  drawMap();
 }
 
-// mapped export pitches: painted cell → merkle melody (deterministic; voice
-// defaults are a player concept and never enter files — M2M-NOTES §6)
-function exportPitches(b) {
+// mapped export pitch SETS: painted stack → else the block's merkle melody
+// (deterministic; voice defaults are a player concept and never enter files — §6)
+function exportPitchSets(b) {
   if (!b.melody) return null;
+  const cols = engine.cells.length;
   return b.pattern.onsets.map((o, i) => {
-    const cell = Math.floor((o.tick % (CELL_TICKS * MAP_CELLS)) / CELL_TICKS);
-    return engine.map[cell] || b.melody[i % b.melody.length];
+    const stack = engine.cells[Math.floor((o.tick % (cols * CELL_TICKS)) / CELL_TICKS)];
+    return (stack && stack.length) ? stack.slice() : [b.melody[i % b.melody.length]];
   });
 }
 
@@ -397,9 +489,9 @@ function render() {
     dl2.title = "mapped export (M2M-NOTES draft): rhythm identical, pitched";
     dl2.addEventListener("click", (e) => {
       e.stopPropagation();
-      const pitches = exportPitches(b);
-      if (!pitches) { setStatus("no melody derived for this block", true); return; }
-      downloadMidiMapped(b.pattern.notes, pitches, b.rootHex, b.height);
+      const sets = exportPitchSets(b);
+      if (!sets) { setStatus("no melody derived for this block", true); return; }
+      downloadMidiMapped(b.pattern.notes, sets, b.rootHex, b.height);
     });
     row.appendChild(dl2);
     const rm = document.createElement("button");
@@ -485,7 +577,10 @@ $("#resetBtn").addEventListener("click", () => {
   blocks = []; selected = null;
   engine.slots.forEach((s, i) => engine.clearSlot(i));
   engine.clearMap();
+  engine.setMapBars(4);
+  engine.setPolyphony(false);
   engine.setMelodySource("none");
+  octShift = 0;
   try { localStorage.removeItem("m2m-rhythm-session-v1"); } catch (e) { }
   history.replaceState(null, "", location.pathname);
   bootFresh();
@@ -526,7 +621,13 @@ async function applySessionAsync(st) {
   engine.setMode(st.mode || "independent");
   if (st.transpose) st.transpose.forEach((t, i) => { if (engine.slots[i]) engine.slots[i].transpose = t | 0; });
   if (st.bpm && st.bpm !== engine.bpm) { try { engine.setBpm(st.bpm); } catch (e) { } }
-  if (st.map) engine.setMap(st.map);
+  if (st.mapBars) engine.setMapBars(st.mapBars);
+  engine.setPolyphony(!!st.polyphony);
+  engine.clearMap();
+  if (st.cells) st.cells.forEach((c, i) => {
+    if (engine.cells[i]) engine.cells[i] = (c || []).filter((p) => p >= 21 && p <= 108).slice(0, 7);
+  });
+  engine.emit();
   if (st.source) engine.setMelodySource(st.source);
   engine.slots.forEach((s, i) => { s.block = null; s.part = null; });
   (st.slots || []).forEach((bi, i) => { if (bi >= 0 && blocks[bi]) engine.setSlot(i, blocks[bi]); });
@@ -550,12 +651,14 @@ async function bootFresh() {
 
 (async function boot() {
   const tag = document.getElementById("protocolTag");
-  if (tag) tag.textContent = `${PROTOCOL_ID} v${PROTOCOL_VERSION} · bitcoin merkle roots → rhythm · +M2M-NOTES v1.0.0`;
+  if (tag) tag.textContent = `${PROTOCOL_ID} v${PROTOCOL_VERSION} · bitcoin merkle roots → rhythm · +M2M-NOTES v2.0.0`;
   const st = session.load();
   if (st) await applySessionAsync(st); else await bootFresh();
+  wireMapCanvas();
+  window.addEventListener("resize", () => drawMap());
   render();
   window.__m2m = {
     engine, derivePattern, deriveMelody, blocks: () => blocks,
-    PROTOCOL_VERSION, exportPitches,
+    PROTOCOL_VERSION, exportPitchSets,
   };
 })();

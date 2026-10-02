@@ -17,11 +17,21 @@
     <section id="slots" aria-label="Instrument slots"></section>
 
     <section id="mapSection" aria-label="Melody map">
-      <h2>Melody map <span class="draft">M2M-NOTES v1</span>
+      <h2>Melody map <span class="draft">M2M-NOTES v2</span></h2>
+      <div id="mapBar">
+        <span class="seg" id="barsSeg">
+          <button data-bars="4" class="btn mini">4 bars</button>
+          <button data-bars="8" class="btn mini">8</button>
+          <button data-bars="16" class="btn mini">16</button>
+        </span>
+        <label class="chk"><input type="checkbox" id="polyChk"> chords (≤7/column)</label>
+        <span class="seg">
+          <button id="octDown" class="btn mini">◀ 8vb</button>
+          <button id="octUp" class="btn mini">8vb ▶</button>
+        </span>
         <button id="srcBtn" class="btn mini">source: voice</button>
-      </h2>
-      <div id="palette"></div>
-      <div id="mapGrid"></div>
+      </div>
+      <div id="mapWrap"><canvas id="mapCanvas" width="640" height="338"></canvas></div>
       <div id="mapRow">
         <select id="fillSelect" aria-label="block to fill from"></select>
         <button id="fillBtn" class="btn">fill from block</button>

@@ -1,14 +1,24 @@
-// notes.js — M2M-NOTES v1.0.0 implementation (pitch layer on the frozen rhythm).
-// Frozen Oct 1; mirrors notes-from-merkle.py exactly (fixture-verified, 98 checks).
+// notes.js — M2M-NOTES v2.0.0 implementation (pitch layer on the frozen rhythm).
+// v2.0.0 (Oct 1, same-day amendment after interaction review): the melody map is a
+// piano roll with its OWN length (4/8/16 bars, default 4) that loops forever, synced
+// across all instruments (position = t mod mapTicks). Monophonic by default; an
+// optional polyphony mode stacks simultaneous pitches per column (cap 7).
+// Mirrors notes-from-merkle.py for the deterministic layer; fixture-verified.
 // Rhythm is untouched: this module only reads the leaf bytes rhythm already derived
 // (bits 11–18, disjoint per OP1 fix) plus scale bits from the root (§2 allocation).
 
 import { hexToBytes, deriveLeaves, BAR_TICKS, DEFAULT_DEPTH } from "./protocol.js";
 
-// ── §4 grid (OP2 resolved: eighths over the 8-bar reference cycle) ──
-export const GRID_TICKS = BAR_TICKS * 8;              // 15360
-export const MAP_CELLS = 64;                           // eighths per cycle
-export const CELL_TICKS = GRID_TICKS / MAP_CELLS;      // 600
+// ── map geometry (v2) ──
+export const CELL_TICKS = 600;                    // one eighth (OP2)
+export const MAP_BAR_OPTIONS = [4, 8, 16];
+export const DEFAULT_MAP_BARS = 4;
+export const POLY_STACK_CAP = 7;
+export const mapTicksFor = (bars) => bars * BAR_TICKS;
+
+// Legacy v1 grid constants (8-bar cycle) — kept for decode compatibility only.
+export const GRID_TICKS = BAR_TICKS * 8;
+export const MAP_CELLS = GRID_TICKS / CELL_TICKS; // 64
 
 // ── §3 modes ──
 export const MODES = {
@@ -76,4 +86,37 @@ export async function deriveMelody(rootHex) {
     foldMidi(scaleDegreeToMidi(pitchByte(l) % scale.scaleSize, scale))
   );
   return { scale, melody32 };
+}
+
+// ── map stack codec (v2): per column [count, notes...] — URL-friendly ──
+export function encodeCells(cells) {
+  const bytes = [];
+  for (const c of cells) {
+    const n = Math.min(c.length, POLY_STACK_CAP);
+    bytes.push(n);
+    for (let i = 0; i < n; i++) bytes.push(c[i]);
+  }
+  return bytes;
+}
+
+export function decodeCells(bytes, cols) {
+  const out = [];
+  let i = 0;
+  for (let col = 0; col < cols; col++) {
+    const c = [];
+    if (i < bytes.length) {
+      const n = Math.min(bytes[i++] | 0, POLY_STACK_CAP);
+      for (let k = 0; k < n && i < bytes.length; k++) {
+        const p = bytes[i++];
+        if (p >= 21 && p <= 108) c.push(p);
+      }
+    }
+    out.push(c);
+  }
+  return out;
+}
+
+// legacy v1 payload: one byte per column (0 empty) over the 8-bar cycle → mono cells
+export function decodeLegacyCells(bytes) {
+  return bytes.map((v) => (v >= 21 && v <= 108 ? [v] : []));
 }

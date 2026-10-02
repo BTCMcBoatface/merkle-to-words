@@ -13,7 +13,7 @@ Python tools, downloadable as
 Three pillars:
 
 - **Protocol** — `MIDI-PROTOCOL.md` (`M2M-RHYTHM/1.0.2`) + `MIDI-NOTES-PROTOCOL.md`
-  (`M2M-NOTES/1.0.0`). The contract. Neither implementation is authoritative;
+  (`M2M-NOTES/2.0.0`). The contract. Neither implementation is authoritative;
   disagreements are bugs; changes are amendments.
 - **Reference tools** — `midi-from-merkle.py` (drums), `notes-from-merkle.py`
   (pitched sketch), `words-from-merkle.py`; cross-language verification via
@@ -25,10 +25,10 @@ Three pillars:
 
 | Area | State |
 |---|---|
-| Protocols | Rhythm `M2M-RHYTHM/1.0.2` **frozen** (1.0.1/1.0.2 editorial; derivation unchanged since 1.0.0). Pitched `M2M-NOTES/1.0.0` **frozen Oct 1** (OP1–4 all ruled; eighths-only grid; melody-source switch; mapped export program 0). Golden-vector doc amendment still deferred; fixtures live in `tests/`. |
+| Protocols | Rhythm `M2M-RHYTHM/1.0.2` **frozen** (1.0.1/1.0.2 editorial; derivation unchanged since 1.0.0). Pitched `M2M-NOTES/2.0.0` **frozen Oct 1** — same-day MAJOR amendment after interaction review (piano-roll map with own length 4/8/16 bars, looping synced across instruments; mono default + chord stacks ≤7; drag-paint brush; v1.0.0 superseded). Golden-vector doc amendment still deferred; fixtures live in `tests/`. |
 | Python reference | **Conforms** — §7.4 cyclic reuse + exact-fill stop, both scripts; disjoint bits 11–18 pitch fix (OP1); validated over 240 synthetic roots. |
 | JS derivation + SMF writers | **Conforms** — `node tests/verify.mjs` PASS 98/98 (rhythm + NOTES: melody32, scale params, pitchBytes, mapped-SMF bytes); canonical downloads byte-identical to mido. |
-| Player features shipped | blocks-on-request (tip/height), 7 slots + shelf (max 8), drag & tap-move, mute, independent/master loop modes, ⟲ re-align, session URL+localStorage, per-block `.mid` download, transpose ±1/±12 (melodic only), BPM box 20–300 (boundary commit), **LIVE mode** (60 s poll, evict-oldest, arrival-driven rotation), **snapshots** (named, localStorage, 20-cap), **melody map** (64-cell paint + palette, merkle-fill, mapped export ⤓) |
+| Player features shipped | blocks-on-request (tip/height), 7 slots + shelf (max 8), drag & tap-move, mute, independent/master loop modes, ⟲ re-align, session URL+localStorage, per-block `.mid` download, transpose ±1/±12 (melodic only), BPM box 20–300 (boundary commit), **LIVE mode** (60 s poll, evict-oldest, arrival-driven rotation), **snapshots** (named, localStorage, 20-cap), **melody map piano roll** (drag-paint brush, own 4/8/16-bar looping length synced across instruments, mono default + chord stacks ≤7, octave shifter, merkle-fill, mapped export ⤓) |
 | Needs eyes/ears | Human browser pass never done — phone (iOS audio unlock, tap-to-move, live/paint ergonomics) + desktop |
 | Pages deploy | Repo public; serve from `main` → `/docs` |
 | `midi-files/`, `notes-midi/` archives | Pre-patch patterns; regeneration **deliberately deferred** |
@@ -79,6 +79,7 @@ Three pillars:
 | OP4: mapped export = fixed program 0 | File is a melody sketch; user picks sound in their DAW |
 | Build order: live → shoehorn → fill/freeze | Live+snapshots are spec-independent and immediate payoff; paint unlocks the freeze checklist; fill is the last spec-consumer |
 | M2M-NOTES 1.0.0 freeze (Oct 1) | Both published gates green (melodic fixtures 98/98; paint round-trip). Rhythm doc → 1.0.2 editorial (Appendix A superseded by pointer). Pitched derivation immutable under 1.x from here |
+| M2M-NOTES 2.0.0 — same-day MAJOR amendment (Oct 1) | Interaction review found the v1 fixed 8-bar-cycle grid wrong: map must be a piano roll (time→, pitch↑↓) with its OWN selectable length (4/8/16 bars, default 4), looping in sync across all instruments ("no block owns a melody"), mono default with optional ≤7-pitch chord stacks per column, drag-painted brush (mousedown paints, held stroke covers, no palette — cells take their row's pitch). Output-affecting ⇒ MAJOR per §1. No external users existed; the bump is honest, not convenient. Lesson logged: interaction-review brand-new UIs before freezing |
 
 ## 5. Roadmap
 
@@ -98,19 +99,26 @@ Three pillars:
       Drag/unassign/remove exits LIVE; re-arming resumes from current arrangement.
 - [x] **Arrangement snapshots** — named saves (blocks, slots, mode, bpm, transpose,
       map, source) in localStorage, capped at 20; save/use/delete chips.
-- [x] **Shoehorn pitch map** — 64-cell paint grid (2×32 rows, barlines), chromatic
-      palette C3–B4 with octave shifts + erase; `&p=`/`&g=` session round-trip;
-      `_pitchFor()` at schedule time: painted cell → melody-source resolution;
-      per-slot transpose folds last; drums structurally never pitched.
+- [x] **Shoehorn melody map (piano roll, v2)** — canvas: time left→right eighths,
+      pitch vertical (2-octave window, default C2–B3, ◀/▶ octave shifter); mousedown
+      paints and a held drag covers every crossed cell at its row's pitch (stroke
+      interpolation); right-drag removes that pitch. The map loops at its OWN length
+      (4/8/16 bars, default 4), synced across every instrument. Monophonic by default
+      (repaint replaces); checkbox enables chord stacks ≤7, played together at the
+      merkle rhythm's timings. `_pitchStackFor()` at schedule time; per-slot transpose
+      folds last; drums structurally never pitched. Session round-trip
+      `&p`(count-prefixed cells)/`&q`/`&o`/`&g`; legacy v1 links still decode.
 - [x] **merkle-fill** — "fill from block" materializes a block's deterministic melody
-      into event cells leaving user paint elsewhere intact (M2M-NOTES §5).
+      into map columns, wrapping at map length (mono: last write wins; chords: union,
+      cap 7), leaving untouched cells as user paint (M2M-NOTES §5).
 - [x] **Mapped export** — "⤓ notes" per block: same timing deltas as canonical file,
       channel 0, program 0; painted cells override, else the block's merkle melody
       (voice defaults never enter files). Byte-checked against the notes-script
       mido output in fixtures.
-- [x] **M2M-NOTES v1.0.0 FROZEN** — OP1–4 all ruled; melodic fixtures + verify.mjs
-      extension (98 checks) + paint round-trip passing; rhythm doc bumped to 1.0.2
-      (editorial: Appendix A → superseded pointer).
+- [x] **M2M-NOTES FROZEN — v1.0.0, amended to v2.0.0 the same day (Oct 1)** — OP1–4
+      ruled; melodic fixtures + verify.mjs extension (98 checks) + round-trip passing;
+      piano-roll rework bumped MAJOR per §1; rhythm doc 1.0.2 (editorial: Appendix A →
+      superseded pointer).
 
 ### Next features — discuss when ready
 - [ ] More instruments beyond the seven (user: "we can add more later").

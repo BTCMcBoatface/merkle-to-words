@@ -2,10 +2,15 @@
 // localStorage mirrors it for convenience. Full merkle roots are stored so a
 // restored session derives locally with ZERO API calls.
 //
-//   ?v=1&b=<height>~<root64>,...&s=<blockIdx|->(x7)&m=ind|master[&t=..][&u=..][&p=..][&g=m]
+//   ?v=1&b=<height>~<root64>,...&s=<blockIdx|->(x7)&m=ind|master[&t=..][&u=..]
+//          [&p=<b64 map cells>][&q=<4|8|16 bars>][&o=p][&g=m]
 //
 // Blocks with unknown height (manual roots) use height "-".
-// &p = base64url of the 64 melody-map bytes (M2M-NOTES §7); &g = melody source.
+// &p = base64url of count-prefixed column stacks (M2M-NOTES v2 encodeCells);
+// &q = map length in bars (default 4); &o = polyphony on; &g = merkle source.
+// Legacy v1 payloads (64 one-byte columns, no &q) decode as mono over 8 bars.
+
+import { encodeCells, decodeCells, decodeLegacyCells } from "./notes.js";
 
 const LS_KEY = "m2m-rhyth…n-v1";
 const V = "1";
@@ -23,7 +28,7 @@ function b64uDecode(str) {
   return out;
 }
 
-export function encode({ blocks, slots, mode, transpose, bpm, map, source }) {
+export function encode({ blocks, slots, mode, transpose, bpm, cells, mapBars, polyphony, source }) {
   const b = blocks.map((k) => `${k.height ?? "-"}~${k.rootHex}`).join(",");
   const s = slots.map((i) => (i == null || i < 0 ? "-" : i)).join(",");
   const m = mode === "master" ? "master" : "ind";
@@ -32,8 +37,9 @@ export function encode({ blocks, slots, mode, transpose, bpm, map, source }) {
     q += `&t=${transpose.map((x) => Math.max(-24, Math.min(24, x | 0))).join(",")}`;
   }
   if (bpm && bpm !== 120) q += `&u=${Math.round(bpm)}`;
-  if (Array.isArray(map) && map.length === 64 && map.some((x) => x | 0)) {
-    q += `&p=${b64uEncode(map)}`;
+  if (Array.isArray(cells) && cells.some((c) => c && c.length)) {
+    q += `&p=${b64uEncode(encodeCells(cells))}&q=${mapBars || 4}`;
+    if (polyphony) q += `&o=p`;
   }
   if (source === "merkle") q += `&g=m`;
   return q;
@@ -77,10 +83,20 @@ export function decode(search) {
     if (u >= 20 && u <= 300) view.bpm = u;
     const pParam = q.get("p");
     if (pParam) {
-      const cells = b64uDecode(pParam);
-      if (cells.length !== 64) return null;
-      // sanitize: 0 or a MIDI note 21–108, else 0
-      view.map = cells.map((v) => (v >= 21 && v <= 108 ? v : 0));
+      const bytes = b64uDecode(pParam);
+      const bars = parseInt(q.get("q") || "0", 10);
+      if (bars === 4 || bars === 8 || bars === 16) {
+        const cols = bars * 8;
+        view.cells = decodeCells(bytes, cols);
+        view.mapBars = bars;
+        view.polyphony = q.get("o") === "p";
+      } else if (bytes.length === 64) {
+        // legacy v1 payload: 64 one-byte mono columns over the 8-bar cycle
+        view.cells = decodeLegacyCells(bytes);
+        view.mapBars = 8;
+      } else {
+        return null;
+      }
     }
     if (q.get("g") === "m") view.source = "merkle";
     return view;
