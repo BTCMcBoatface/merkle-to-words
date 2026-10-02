@@ -490,7 +490,6 @@ function render() {
     const meta = document.createElement("div");
     meta.className = "meta";
     meta.textContent = `${b.pattern.barCount} bar · ${b.pattern.notes.length} notes` +
-      (b.scale ? ` · ${b.scale.rootNoteName} ${b.scale.modeName}` : "") +
       (inSlot >= 0 ? " → " + getVoice(engine.slots[inSlot].voiceId).label : " · shelf");
     card.appendChild(meta);
 
