@@ -3,6 +3,27 @@
 ## Project Overview
 Tools for converting a Bitcoin merkle root (256-bit hash) into human-readable words and rhythmic MIDI patterns.
 
+## Session handoff (every new session: do this first)
+1. **Read `PROJECT.md`** — status snapshot, decision log, roadmap. It is the single
+   resume-from artifact; "read first" applies to feature work especially.
+2. **Never assume git state** — the owner commits/pushes on their own cadence, often
+   outside agent awareness. Run `git status` / `git log` live, every time it matters.
+3. **Commit messages**: when a build round is finished, propose exactly ONE short
+   commit-message line at the end of the reply (owner commits, or explicitly delegates).
+4. Verification gates before declaring done: `node tests/verify.mjs` must print
+   PASS (currently 98/98, both protocols); new UI needs the human browser pass.
+
+## Disclosure policy (standing — applies to every artifact an agent writes)
+- **Prohibited:** the owner's personally identifying strings — real name (any
+  spelling/variant) and personal account handle — in ANY file, code comment, doc,
+  commit message, suggestion, or generated content. State the rule generically, as
+  here; never enumerate the forbidden strings themselves. Privacy sweeps check the
+  working tree, full git history (all blobs, decompressed via
+  `git cat-file --batch-all-objects --batch`), commit messages, paths, and `.git`.
+- **Fine to disclose:** the `BTCMcBoatface` pseudonym and its gmail — this is the
+  publishing identity by choice; do not repeatedly warn about it.
+- **Discouraged:** local machine-username strings; keep them out of written artifacts.
+
 ## Files
 - `words-from-merkle.py` — Converts merkle root to 21-word BIP-39 phrase
 - `midi-from-merkle.py` — Converts merkle root to rhythmic MIDI via merkle tree descent

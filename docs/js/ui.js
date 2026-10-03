@@ -543,7 +543,7 @@ function render() {
     row.appendChild(dl);
     const dl2 = document.createElement("button");
     dl2.textContent = "⤓ notes";
-    dl2.title = "mapped export (M2M-NOTES draft): rhythm identical, pitched";
+    dl2.title = "mapped export (M2M-NOTES v2.1): rhythm identical, pitched (capo included)";
     dl2.addEventListener("click", (e) => {
       e.stopPropagation();
       const sets = exportPitchSets(b);

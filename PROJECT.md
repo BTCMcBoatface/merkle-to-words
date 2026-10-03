@@ -6,7 +6,7 @@ Purpose: one artifact to resume from, decide from, and add features against.
 ## 1. What this is
 
 Deterministic music from Bitcoin: a block's merkle root derives a rhythm pattern
-(frozen in `MIDI-PROTOCOL.md` v1.0.2 + `MIDI-NOTES-PROTOCOL.md` v1.0.0), playable via
+(frozen in `MIDI-PROTOCOL.md` v1.0.2 + `MIDI-NOTES-PROTOCOL.md` v2.1.0), playable via
 Python tools, downloadable as
 `.mid`, and performable live in the browser as a 7-instrument ensemble on GitHub Pages.
 
@@ -32,7 +32,7 @@ Three pillars:
 | Needs eyes/ears | Human browser pass never done — phone (iOS audio unlock, tap-to-move, live/paint ergonomics) + desktop |
 | Pages deploy | Repo public; serve from `main` → `/docs` |
 | `midi-files/`, `notes-midi/` archives | Pre-patch patterns; regeneration **deliberately deferred** |
-| Git | User commits on their own cadence — check `git status`, never assume |
+| Git | Owner commits/pushes on their own cadence — check `git status`, never assume. Remote is SSH (`git@github.com:BTCMcBoatface/…`), verified working Oct 1. Commit identity from `~/.gitconfig` (persona — intentional, not a leak). Agents propose one-line commit messages; owner executes unless explicitly delegated. |
 
 ## 3. Architecture invariants (do not break)
 
@@ -83,21 +83,29 @@ Three pillars:
 | OP3: melody-source switch, not a fixed fallback | Owner refined: **MERKLE on** → empty-cell notes sing the block's deterministic melody; **MERKLE off** → empty cells use the voice default. Painted cells override in both modes. The "fill" button just materializes the current source into cells as a starting sketch |
 | OP4: mapped export = fixed program 0 | File is a melody sketch; user picks sound in their DAW |
 | Build order: live → shoehorn → fill/freeze | Live+snapshots are spec-independent and immediate payoff; paint unlocks the freeze checklist; fill is the last spec-consumer |
+| Disclosure policy (Oct 1, moved to AGENTS.md) | Real-name strings prohibited in every agent-written artifact (full history/pack sweeps verified clean pre-public); BTCMcBoatface persona + gmail intentionally public; machine usernames discouraged. Canonical text lives in AGENTS.md "Disclosure policy" |
+| Commit-message practice (Oct 1, in AGENTS.md handoff) | Build rounds end with exactly one proposed short commit line; owner handles git unless explicitly delegating |
 | M2M-NOTES 1.0.0 freeze (Oct 1) | Both published gates green (melodic fixtures 98/98; paint round-trip). Rhythm doc → 1.0.2 editorial (Appendix A superseded by pointer). Pitched derivation immutable under 1.x from here |
 | M2M-NOTES 2.0.0 — same-day MAJOR amendment (Oct 1) | Interaction review found the v1 fixed 8-bar-cycle grid wrong: map must be a piano roll (time→, pitch↑↓) with its OWN selectable length (4/8/16 bars, default 4), looping in sync across all instruments ("no block owns a melody"), mono default with optional ≤7-pitch chord stacks per column, drag-painted brush (mousedown paints, held stroke covers, no palette — cells take their row's pitch). Output-affecting ⇒ MAJOR per §1. No external users existed; the bump is honest, not convenient. Lesson logged: interaction-review brand-new UIs before freezing |
 | No auto-assign outside LIVE (Oct 1, BUILT v1.1.0) | Blocks join the shelf and are placed by hand. Only two exceptions: first-load demo (tip → Bass Drum once) and LIVE arrivals (auto-place + rotation, mechanically necessary). Manual get-latest/fetch-height land shelf-only with a status hint |
 | Reassign = evict-to-shelf, not swap (Oct 1) | Owner ruling: moving block A onto occupied B sends B to the shelf (stays in collection). Deterministic, never double-books an instrument |
 | ✕ is Clear, two-click armed (Oct 1) | Owner reframing: "clear" not "reset" — stops transport, disarms LIVE, returns every block to the shelf; collection, map, tempo, transposes survive; no refetch, no demo. Second click within 3.5 s required ("clear?") |
-| App versioning convention (Oct 1) | `docs/js/version.js` single source, shown in header tag, stamped into snapshots. 1.0.0 = first ensemble build (retroactive); 1.1.0 = this feature round. MAJOR breaks session/export semantics, MINOR adds features, PATCH fixes |
+| Map extent model, not resize-reslice (Oct 1) | Fixed 128-col (16-bar) store; the length selector chooses the LOOPING window (1/2/4/8/16, baseline 4). ÷2/×2 non-destructive (tail hides, returns) — also future-proofs per-instrument maps whose lengths differ |
+| Capo = map-level, sounding-only (Oct 1) | Owner chose map-wide ±1 over per-note/view-offset: painted data immutable, applied at schedule + painted-export, fallbacks never capoed, clamped ±11. ♯-fold is a view filter (hidden sharps = notch markers), never serialized |
+| Eighth-cell arithmetic: 240, not 600 (Oct 1) | The frozen 2.0.0 text's "600 ticks" contradicted its own math (15360/64 = 240); shipped code inherited it — back third of every map was unreachable. Found via real-eighth-timing test. Lesson: property tests must use MUSIC times, not code arithmetic. Spec PATCH-corrected |
+| App versioning convention (Oct 1) | `docs/js/version.js` single source, shown in header tag, stamped into snapshots. 1.0.0 = first ensemble build (retroactive); 1.1.0 = live/snapshots/piano-roll/shelf/dropdown/clear; 1.2.0 = capo/fold/1-2-bar extents. MAJOR breaks session/export semantics, MINOR adds features, PATCH fixes |
 
 ## 5. Roadmap
 
 ### Now
-- [ ] Human browser pass: phone + desktop — listen to voices/mix levels, drag vs
-      tap ergonomics, iOS gesture-unlock, **new: LIVE button, paint grid, snapshot
-      flow, mapped export**.
-- [ ] Commit current build (live mode + snapshots + melody map + NOTES freeze +
-      version bumps); confirm live Pages URL serves it.
+- [ ] Human browser pass (never done — the app has no listener yet): phone + desktop.
+      Voices/mix levels, drag vs tap ergonomics, iOS gesture-unlock, LIVE button,
+      paint grid, ♯-fold markers + notch visibility, capo readout, extent switching
+      (incl. hidden-tail restore on ×2), snapshot flow, mapped export.
+- [x] Commit current build (live mode + snapshots + melody map + NOTES freeze +
+      version bumps) — `0ed82ba` pushed Oct 1.
+- [ ] Confirm live Pages URL serves the v1.2.0 build (hard-refresh past cache;
+      header tag should read `player v1.2.0`).
 - [ ] One real public session link shared as the canonical smoke target.
 
 ### Shipped (Oct 1) — awaiting only the browser pass above
@@ -147,6 +155,10 @@ Three pillars:
 - [ ] Optional 808 tuning knobs (kick pitch/body, snare tone) — sound design, not transpose.
 - [ ] Mix controls: master volume; per-slot volume/solo.
 - [ ] Live-mode polish: rotation counter display, poll-interval option, arrival sound.
+- [ ] Mobile melody-map treatment (owner-flagged Oct 1, deferred): the piano roll needs
+      a popup / modular panel on phones rather than an inline section — part of the
+      broader "doesn't work on mobile yet" pass. Keep map state in engine unchanged;
+      this is a layout/interaction layer so it does not box in the multi-map future.
 
 ### Later / structural
 - [ ] Protocol amendment: golden test vectors appendix (mechanical now — fixtures
