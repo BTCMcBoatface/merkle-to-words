@@ -8,7 +8,8 @@ import { deriveMelody, noteName, CELL_TICKS, foldMidi, mapTicksFor } from "./not
 import { fetchTip, fetchByHeight } from "./api.js";
 import { downloadMidi, downloadMidiMapped } from "./smf.js";
 import { Ensemble, MAX_BLOCKS } from "./engine.js";
-import { getVoice } from "./synth.js";
+import { getVoice, TONE_SCHEMA, TONE_DEFAULTS, toneFor, setTone, resetTone } from "./synth.js";
+import * as tonebank from "./tonebank.js";
 import { APP_VERSION } from "./version.js";
 import * as session from "./state.js";
 
@@ -16,7 +17,12 @@ const LIVE_POLL_MS = 60000;
 const SNAP_KEY = "m2m…s-v1";
 
 const engine = new Ensemble();
-let blocks = [];           // [{height, rootHex, pattern, melody?, scale?}]
+// sound layer (local-only persistence — see tonebank.js): restore before boot
+const bank = tonebank.load() || tonebank.blank();
+for (const id of Object.keys(TONE_SCHEMA)) setTone(id, bank.tone[id]);
+engine.setReverb(bank.reverb);
+let openTone = null;         // slot index whose tone panel is open (view state)
+let blocks = [];             // [{height, rootHex, pattern, melody?, scale?}]
 let selected = null;       // {kind:'block'|'slot', idx} — tap-to-move mode
 let busy = false;
 let liveTimer = null;
@@ -27,6 +33,12 @@ const $ = (s) => document.querySelector(s);
 const slotsEl = $("#slots"), shelfEl = $("#shelf"), statusEl = $("#status");
 const playBtn = $("#playBtn"), modeBtn = $("#modeBtn"), bpmInput = $("#bpmInput");
 const liveBtn = $("#liveBtn"), srcBtn = $("#srcBtn");
+const reverbIn = $("#reverbIn");
+reverbIn.addEventListener("input", () => {
+  engine.setReverb(parseInt(reverbIn.value, 10) / 100);
+  bank.reverb = engine.reverb;
+  tonebank.save(bank);
+});
 
 engine.onChange(() => render());
 
@@ -396,6 +408,110 @@ $("#snapSave").addEventListener("click", () => {
   render();
 });
 
+// ── tone panels (edit-sound; render-time dials per melodic voice) ──
+// Panel state writes straight into synth.js's live params (effect on the next
+// triggered note) + tonebank.js localStorage. Deliberately NO session persist
+// and NO full render() on slider input — dragging a slider must not rebuild
+// the DOM under the finger. The panel is hidden until "sound" is tapped.
+function persistTone(voiceId) {
+  bank.tone[voiceId] = { ...toneFor(voiceId) };
+  tonebank.save(bank);
+}
+function fmt(d, v) {
+  if (d.unit === "Hz") return String(Math.round(v));
+  if (d.unit === "s") return String(Math.round(v * 1000) / 1000);
+  return String(Math.round(v * 100) / 100);
+}
+
+function buildTonePanel(voiceId) {
+  const p = toneFor(voiceId);
+  const wrap = document.createElement("div");
+  wrap.className = "tone";
+  wrap.addEventListener("click", (e) => e.stopPropagation());
+  for (const d of TONE_SCHEMA[voiceId]) {
+    const row = document.createElement("div");
+    if (d.type === "enum") {
+      row.className = "wrow";
+      const lbl = document.createElement("span");
+      lbl.textContent = d.label;
+      row.appendChild(lbl);
+      for (const opt of d.options) {
+        const b = document.createElement("button");
+        b.textContent = opt === "sawtooth" ? "saw" : opt === "triangle" ? "tri" : opt;
+        b.title = opt;
+        if (p[d.key] === opt) b.classList.add("sel");
+        b.addEventListener("click", () => {
+          p[d.key] = opt;
+          persistTone(voiceId);
+          row.querySelectorAll("button").forEach((x) => x.classList.toggle("sel", x.title === opt));
+        });
+        row.appendChild(b);
+      }
+    } else {
+      row.className = "frow";
+      const lbl = document.createElement("label");
+      lbl.textContent = d.label;
+      const inp = document.createElement("input");
+      inp.type = "range"; inp.min = d.min; inp.max = d.max; inp.step = d.step; inp.value = p[d.key];
+      inp.setAttribute("aria-label", `${d.label} (${voiceId})`);
+      const out = document.createElement("output");
+      out.textContent = fmt(d, p[d.key]);
+      inp.addEventListener("input", () => {
+        p[d.key] = parseFloat(inp.value);
+        out.textContent = fmt(d, p[d.key]);
+        persistTone(voiceId);
+      });
+      row.appendChild(lbl); row.appendChild(inp); row.appendChild(out);
+    }
+    wrap.appendChild(row);
+  }
+
+  const srow = document.createElement("div");
+  srow.className = "tbtns";
+  const nameIn = document.createElement("input");
+  nameIn.className = "tname"; nameIn.placeholder = "favorite name"; nameIn.maxLength = 24;
+  nameIn.setAttribute("aria-label", "favorite tone name");
+  const sv = document.createElement("button");
+  sv.className = "btn mini"; sv.textContent = "💾 save";
+  sv.addEventListener("click", () => {
+    const nm = nameIn.value.trim() || `tone ${new Date().toLocaleTimeString()}`;
+    tonebank.addFav(bank, voiceId, nm, { ...p });
+    setStatus(`favorite "${nm}" saved (${(bank.favs[voiceId] || []).length}/8)`);
+    render();
+  });
+  nameIn.addEventListener("keydown", (e) => { if (e.key === "Enter") sv.click(); });
+  const rst = document.createElement("button");
+  rst.className = "btn mini"; rst.textContent = "reset";
+  rst.title = "back to this voice's built-in defaults";
+  rst.addEventListener("click", () => {
+    setTone(voiceId, TONE_DEFAULTS[voiceId]); persistTone(voiceId);
+    setStatus(`${getVoice(voiceId).label}: tone reset to defaults`);
+    render();
+  });
+  srow.appendChild(nameIn); srow.appendChild(sv); srow.appendChild(rst);
+  wrap.appendChild(srow);
+
+  (bank.favs[voiceId] || []).forEach((f, i) => {
+    const fr = document.createElement("div");
+    fr.className = "favrow";
+    const nm = document.createElement("span");
+    nm.className = "fname"; nm.textContent = f.name;
+    const use = document.createElement("button");
+    use.textContent = "use";
+    use.addEventListener("click", () => {
+      setTone(voiceId, f.params); persistTone(voiceId);
+      setStatus(`tone "${f.name}" loaded`);
+      render();
+    });
+    const del = document.createElement("button");
+    del.textContent = "✕"; del.title = "delete favorite";
+    del.addEventListener("click", () => { tonebank.removeFav(bank, voiceId, i); render(); });
+    fr.appendChild(nm); fr.appendChild(use); fr.appendChild(del);
+    wrap.appendChild(fr);
+  });
+  return wrap;
+}
+
 // ── rendering ──
 function render() {
   // drop dangling selection (e.g., a selected block was just evicted by live mode)
@@ -431,6 +547,18 @@ function render() {
     muteBtn.className = s.muted ? "on" : "";
     muteBtn.addEventListener("click", (e) => { e.stopPropagation(); engine.toggleMute(i); persist(); });
     acts.appendChild(muteBtn);
+    if (TONE_SCHEMA[s.voiceId]) {
+      const snd = document.createElement("button");
+      snd.textContent = "sound";
+      snd.title = "edit sound — tone dials for this voice (saved in this browser)";
+      if (openTone === i) snd.classList.add("on");
+      snd.addEventListener("click", (e) => {
+        e.stopPropagation();
+        openTone = (openTone === i) ? null : i;
+        render();
+      });
+      acts.appendChild(snd);
+    }
     if (s.block) {
       const out = document.createElement("button");
       out.textContent = "unassign";
@@ -460,6 +588,7 @@ function render() {
       tv.textContent = s.transpose ? `T${s.transpose > 0 ? "+" : ""}${s.transpose}` : "";
       tRow.appendChild(tv);
       el.appendChild(tRow);
+      if (TONE_SCHEMA[s.voiceId] && openTone === i) el.appendChild(buildTonePanel(s.voiceId));
     }
 
     el.addEventListener("click", () => {
@@ -485,7 +614,9 @@ function render() {
         if (moving) placeBlock(moving, i);
       }
     });
-    if (s.block) {
+    // while the tone panel is open the slot must not be a native drag source
+    // (a slider drag would get hijacked by the parent's draggable=true)
+    if (s.block && openTone !== i) {
       el.draggable = true;
       el.addEventListener("dragstart", (e) => {
         e.dataTransfer.setData("text/plain", JSON.stringify({ kind: "slot", idx: i }));
@@ -586,6 +717,7 @@ function render() {
   srcBtn.classList.toggle("on", engine.melodySource === "merkle");
   if (document.activeElement !== bpmInput) bpmInput.value = engine.pendingBpm ?? engine.bpm;
   bpmInput.classList.toggle("pending", !!engine.pendingBpm);
+  if (document.activeElement !== reverbIn) reverbIn.value = String(Math.round(engine.reverb * 100));
 
   renderMap();
 

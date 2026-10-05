@@ -47,6 +47,11 @@ export class Ensemble {
     this.timer = null;
     this._cycleIdx = 0;
     this._listeners = new Set();
+    // global reverb (the ONE whole-mix sound knob; local-persisted by tonebank)
+    this.reverb = 0;          // 0–1 wet level
+    this._wet = null;         // per-play wet gain node
+    this._ir = null;          // cached convolver (per AudioContext)
+    this._irCtx = null;
     this.slots = SLOT_INSTRUMENTS.map((voiceId) => ({
       voiceId, block: null, part: null, muted: false, transpose: 0,
     }));
@@ -111,6 +116,31 @@ export class Ensemble {
   setLive(on) {
     this.live = !!on;
     this.emit();
+  }
+
+  // ── global reverb (render-time; ONE wet knob over the whole mix, not a
+  // per-instrument setting and never part of files/sessions — tonebank.js) ──
+  setReverb(v) {
+    this.reverb = Math.max(0, Math.min(1, Number(v) || 0));
+    if (this.playing && this._wet) {
+      this._wet.gain.setTargetAtTime(this.reverb, this.ctx.currentTime, 0.02);
+    }
+  }
+
+  // synthesized room: stereo decaying-noise impulse response (no audio asset),
+  // built once per AudioContext and reused across plays.
+  _reverbIR(ctx) {
+    if (this._ir && this._irCtx === ctx) return this._ir;
+    const len = Math.max(1, Math.floor(ctx.sampleRate * 2.0));
+    const buf = ctx.createBuffer(2, len, ctx.sampleRate);
+    for (let ch = 0; ch < 2; ch++) {
+      const d = buf.getChannelData(ch);
+      for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.5);
+    }
+    const conv = ctx.createConvolver();
+    conv.buffer = buf;
+    this._ir = conv; this._irCtx = ctx;
+    return conv;
   }
 
   // Rotate the arrangement one round-robin step: block at slot i travels to slot
@@ -254,6 +284,13 @@ export class Ensemble {
     this.bus.connect(comp);
     comp.connect(ctx.destination);
     this._comp = comp;
+    // reverb send post-compressor: the whole mix (drums included) feeds a
+    // cached convolver whose wet gain rides the single global knob
+    const conv = this._reverbIR(ctx);
+    const wet = ctx.createGain();
+    wet.gain.value = this.reverb;
+    comp.connect(conv); conv.connect(wet); wet.connect(ctx.destination);
+    this._wet = wet;
 
     this.startTime = ctx.currentTime + 0.1;
     this._segments = [{ tick0: 0, time0: this.startTime, tps: this._tpsBase }];
@@ -270,11 +307,16 @@ export class Ensemble {
   stop() {
     if (this.timer) { clearInterval(this.timer); this.timer = null; }
     if (this.bus) {
-      const b = this.bus, c = this.ctx, comp = this._comp;
+      const b = this.bus, c = this.ctx, comp = this._comp, wet = this._wet;
       b.gain.setTargetAtTime(0, c.currentTime, 0.01);
-      setTimeout(() => { try { b.disconnect(); comp.disconnect(); } catch (e) { /* gone */ } }, 250);
+      setTimeout(() => {
+        try {
+          b.disconnect(); comp.disconnect();
+          if (wet) { wet.disconnect(); if (this._ir) this._ir.disconnect(); }
+        } catch (e) { /* gone */ }
+      }, 250);
     }
-    this.bus = null; this._comp = null;
+    this.bus = null; this._comp = null; this._wet = null;
     this.playing = false;
     this._segments = null; this._pending = null; // discard uncommitted tempo
     for (const s of this.slots) s.part = null;

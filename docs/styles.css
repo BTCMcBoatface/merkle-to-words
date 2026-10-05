@@ -156,3 +156,39 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: var
 #snapList .snap button { background: none; border: none; color: var(--dim); cursor: pointer; font-size: 12px; padding: 0 2px; }
 #snapList .snap .restore { color: var(--accent); }
 #snapList .snap .del { color: var(--danger); }
+
+/* tone panels (edit-sound dials — render-time sound layer) */
+.slot .tone {
+  border-top: 1px dashed var(--line); margin-top: 6px; padding-top: 8px;
+  display: flex; flex-direction: column; gap: 6px; cursor: default;
+}
+.slot .tone .frow { display: flex; align-items: center; gap: 6px; font-size: 10px; color: var(--dim); }
+.slot .tone .frow label { width: 62px; flex: none; }
+.slot .tone .frow output { min-width: 34px; text-align: right; font-size: 10px; color: var(--accent); font-variant-numeric: tabular-nums; }
+.slot .tone input[type="range"] { flex: 1; min-width: 0; accent-color: var(--accent); height: 22px; }
+.slot .tone .wrow { display: flex; align-items: center; gap: 4px; font-size: 10px; color: var(--dim); flex-wrap: wrap; }
+.slot .tone .wrow span { width: 62px; flex: none; }
+.slot .tone .wrow button {
+  background: none; border: 1px solid var(--line); color: var(--dim);
+  border-radius: 8px; padding: 2px 6px; font-size: 10px; cursor: pointer;
+}
+.slot .tone .wrow button.sel { color: var(--accent); border-color: var(--accent); }
+.slot .tone .tbtns { display: flex; gap: 5px; align-items: center; }
+.slot .tone .tname {
+  flex: 1; min-width: 0; background: var(--card2); border: 1px solid var(--line);
+  color: var(--text); border-radius: 8px; padding: 4px 6px; font-size: 11px;
+}
+.slot .tone .favrow { display: flex; align-items: center; gap: 6px; font-size: 11px; }
+.slot .tone .favrow .fname {
+  flex: 1; min-width: 0; color: var(--accent2);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.slot .tone .favrow button {
+  background: none; border: 1px solid var(--line); color: var(--dim);
+  border-radius: 8px; padding: 2px 7px; font-size: 11px; cursor: pointer;
+}
+.slot .tone .favrow button:hover { color: var(--accent); border-color: var(--accent); }
+
+/* transport reverb (one whole-mix knob) */
+#transport .fx { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--dim); }
+#reverbIn { width: 92px; accent-color: var(--accent2); }
