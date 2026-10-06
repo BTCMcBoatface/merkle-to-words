@@ -459,9 +459,17 @@ function drawSeq() {
     g.fillRect(SQ_GUT, y, cellW * cols, SQ_ROW_H);
     g.fillStyle = seqMode ? "#7dd3fc" : "#8a93a6";
     g.font = "9px ui-monospace, Menlo, monospace";
-    g.fillText(LANE_LABELS[lane], 4, y + 11);
-    g.font = "8px sans-serif";
-    g.fillText(seqMode ? "▸ seq" : "▸ raw", 4, y + 23);
+    g.fillText(LANE_LABELS[lane], 4, y + 10);
+    // mode pill — whole gutter is the tap target; ▾ says "press me"
+    if (seqMode) {
+      g.fillStyle = "#7dd3fc"; g.fillRect(3, y + 13, 40, 12);
+      g.fillStyle = "#06202e";
+    } else {
+      g.strokeStyle = "#3a4256"; g.lineWidth = 1; g.strokeRect(3.5, y + 13.5, 39, 11);
+      g.fillStyle = "#8a93a6";
+    }
+    g.font = "bold 8px sans-serif";
+    g.fillText(seqMode ? "SEQ ▾" : "raw ▾", lane === "bass-drum" || lane === "hat-closed" ? 9 : 10, y + 21.5);
 
     const cells = engine.seq.cells[lane], qset = quants[lane];
     for (let c = 0; c < cols; c++) {
@@ -512,10 +520,21 @@ function wireSeqCanvas() {
     const x = e.clientX - r.left, y = e.clientY - r.top;
     const h = seqCellFromXY(x, y);
     if (!h) return;
-    if (h.gutter) { engine.seqToggleMode(h.lane); persist(); render(); return; }
+    if (h.gutter) {
+      engine.seqToggleMode(h.lane);
+      const m = engine.seq.modes[h.lane];
+      setStatus(`${LANE_LABELS[h.lane]} lane → ${m === "seq" ? "SEQ — the ribbon plays" : "raw merkle"}`);
+      persist(); render(); return;
+    }
     let val;
     if (e.button === 2) { val = 0; engine.seqPaint(h.lane, h.col, 0); } // right-drag clears to inherit
     else { val = engine.seqCycle(h.lane, h.col); }                      // tap: inherit ▸ on ▸ rest ▸ inherit
+    // Painting an audible cell (hit or rest) in a raw lane ARMS the lane —
+    // edits must never silently do nothing (v1.4.1, owner-reported confusion)
+    if (val !== 0 && engine.seq.modes[h.lane] !== "seq") {
+      engine.seqToggleMode(h.lane);
+      setStatus(`${LANE_LABELS[h.lane]} armed: SEQ — your edits play now (tap its pill for raw)`);
+    }
     seqStroke = { lane: h.lane, val };
     lastSeqXY = [x, y];
     try { canvas.setPointerCapture(e.pointerId); } catch (err) { }
