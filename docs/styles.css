@@ -183,6 +183,11 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: var
 }
 .slot .tone .thead button:hover { color: var(--danger); border-color: var(--danger); }
 .slot .tone .frow { display: flex; align-items: center; gap: 6px; font-size: 10px; color: var(--dim); }
+.slot .tone .frow.mod { color: var(--accent2); }
+.slot .tone .frow.mod label { color: var(--accent2); font-weight: 700; }
+.slot .tone .frow.mod input[type="range"] { accent-color: var(--accent2); }
+.slot .tone .crow span { color: var(--accent2); }
+.slot .tone .crow button.sel { color: var(--accent2); border-color: var(--accent2); }
 .slot .tone .frow label { width: 62px; flex: none; }
 .slot .tone .frow output { min-width: 34px; text-align: right; font-size: 10px; color: var(--accent); font-variant-numeric: tabular-nums; }
 .slot .tone input[type="range"] { flex: 1; min-width: 0; accent-color: var(--accent); height: 22px; }

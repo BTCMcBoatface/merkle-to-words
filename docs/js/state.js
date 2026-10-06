@@ -16,9 +16,20 @@
 import { encodeCells, decodeCells, decodeLegacyCells, MAP_MAX_COLS } from "./notes.js";
 import { encodeLanes, decodeLanes, lanesHaveEdits, DRUM_LANES, SEQ_RESOLUTIONS, SEQ_EXTENTS, SEQ_DEFAULT_RES, SEQ_DEFAULT_BARS } from "./seq.js";
 
-const LS_KEY = "m2m-rhyth…n-v1";
+const LS_KEY = "m2m-session-v1";
+const LS_KEY_LEGACY = "m2m-rhyth…n-v1"; // pre-v1.5 shipped constant (stray “…” glyph — intentional literal, used only for one-time migration)
 const V = "1";
 const HEX64 = /^[0-9a-f]{64}$/;
+
+// browsers that ran pre-1.5 builds stored the session mirror under the corrupted key
+function migrateLS() {
+  try {
+    if (localStorage.getItem(LS_KEY) === null && localStorage.getItem(LS_KEY_LEGACY) !== null) {
+      localStorage.setItem(LS_KEY, localStorage.getItem(LS_KEY_LEGACY));
+      localStorage.removeItem(LS_KEY_LEGACY);
+    }
+  } catch (e) { /* private mode */ }
+}
 
 function b64uEncode(arr) {
   let s = "";
@@ -138,6 +149,7 @@ export function decode(search) {
 }
 
 export function save(view) {
+  migrateLS();
   try { localStorage.setItem(LS_KEY, JSON.stringify(view)); } catch (e) { /* private mode */ }
   try { history.replaceState(null, "", encode(view)); } catch (e) { /* file:// */ }
 }
@@ -147,6 +159,7 @@ export function load() {
 }
 
 function loadLSRaw() {
+  migrateLS();
   try {
     const raw = localStorage.getItem(LS_KEY);
     if (!raw) return null;

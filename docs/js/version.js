@@ -13,5 +13,12 @@
 // tri-state steps, live whole→16th grid, map-style extents), session-carried
 // (&e &j &i &d). Derivation untouched; "raw" lanes default = prior behavior;
 // 1.4.1 = arm-on-paint (editing a raw lane's cell flips it to SEQ — painting
-// must never be silently inaudible) + gutter mode PILL + status feedback.
-export const APP_VERSION = "1.4.1";
+// must never be silently inaudible) + gutter mode PILL + status feedback;
+// 1.5.0 = tempo-synced sine modulation — right-click/long-press any melodic
+// slider to oscillate its full min↔max span; ∿ cycle 𝅝·𝅗𝅥·♩·♪·♬ (one full
+// sine loop per duration), tick-domain phase (retunes with BPM), live LFO
+// oscs for filter/Q, per-note sampling for envelope/level/drawbars. Stored as
+// {rate, depth, lo, hi, phase} — depth/lo/hi/phase reserved for future min/max
+// markers without format change. Sound layer → tonebank localStorage only;
+// derivation/sessions/exports untouched (engine trigger gained an optional arg).
+export const APP_VERSION = "1.5.0";

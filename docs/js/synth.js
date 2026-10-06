@@ -42,40 +42,69 @@ function startOsc(ctx, type, freq, time, stopAt) {
 // dials the UI draws; the trigger functions read the live params at schedule
 // time. Only what the synth already contains is exposed (waveform among the
 // four built-in oscillator types, filter cutoff/Q, envelope times, organ
-// drawbar levels, output level) — no new signal sources, no LFO routing.
+// drawbar levels, output level). Tempo-synced ∿ modulation lives on top of
+// these (below) — still 100% Web Audio built-ins: sine osc + gain + param sum.
 // Downloads stay canonical (MIDI-PROTOCOL.md §5/§11): this lives in the air,
 // not in the derived event stream.
 
 export const WAVES = ["sine", "square", "sawtooth", "triangle"];
 
+// ── Tempo-synced sine modulation (v1.5) ───────────────────────────────────
+// Any slider can oscillate: value(t) = base + sin(2π·Δticks/cycleTicks) × span×depth/2
+// (depth 1 + mid-slider base = the full min↔max swing; sweep endpoints are
+// remapped across the full range at full depth). Cycle lengths are musical
+// TICKS (whole..16th over the 480-PPQ grid) so BPM changes retune the wobble.
+// modTarget splits the mechanism:
+//   "scalar"  — resolved per note at onset (envelope times, levels, drawbars)
+//   "param"   — continuous: a shared, transport-phase-locked sine oscillator
+//               (engine-owned) summed into the AudioParam via a per-note
+//               depth gain — true analog-style filter wobble on long notes.
+// NOT BOXING IN (owner directive): every mod state is stored as
+// {rate, depth, lo, hi} where lo/hi DEFAULT to the schema min/max and are
+// honored by the mapping formula — the future min/max markers UI plugs in by
+// setting lo/hi, no storage or math change. `wave` is sine-only for now per
+// owner spec but modTarget/depth math is wave-agnostic. Drum params can join
+// later by adding modTarget to their schema entries.
+
+export const LFO_RATES = [
+  { steps: 1, label: "𝅝", name: "whole" },
+  { steps: 2, label: "𝅗𝅥", name: "half" },
+  { steps: 4, label: "♩", name: "quarter" },
+  { steps: 8, label: "♪", name: "eighth" },
+  { steps: 16, label: "♬", name: "sixteenth" },
+];
+export const LFO_DEFAULT_RATE = 8;
+const BAR_TICKS_S = 1920; // 480 PPQ × 4 — local mirror of protocol BAR_TICKS (cycle math)
+export const lfoCycleTicks = (rateSteps) => BAR_TICKS_S / rateSteps;
+
 export const TONE_SCHEMA = {
   "lead-synth": [
     { key: "wave", label: "waveform", type: "enum", options: WAVES },
-    { key: "cutoff", label: "filter open", unit: "Hz", type: "f", min: 200, max: 8000, step: 25 },
-    { key: "cutoffEnd", label: "filter close", unit: "Hz", type: "f", min: 80, max: 6000, step: 25 },
-    { key: "q", label: "resonance", type: "f", min: 0.3, max: 18, step: 0.1 },
-    { key: "attack", label: "attack", unit: "s", type: "f", min: 0.001, max: 0.1, step: 0.001 },
-    { key: "gate", label: "length", unit: "s", type: "f", min: 0.1, max: 1.5, step: 0.01 },
-    { key: "release", label: "release", unit: "s", type: "f", min: 0.01, max: 0.6, step: 0.01 },
-    { key: "level", label: "level", type: "f", min: 0, max: 1, step: 0.01 },
+    { key: "cutoff", label: "filter open", unit: "Hz", type: "f", min: 200, max: 8000, step: 25, modTarget: "param" },
+    { key: "cutoffEnd", label: "filter close", unit: "Hz", type: "f", min: 80, max: 6000, step: 25, modTarget: "param" },
+    { key: "q", label: "resonance", type: "f", min: 0.3, max: 18, step: 0.1, modTarget: "param" },
+    { key: "attack", label: "attack", unit: "s", type: "f", min: 0.001, max: 0.1, step: 0.001, modTarget: "scalar" },
+    { key: "gate", label: "length", unit: "s", type: "f", min: 0.1, max: 1.5, step: 0.01, modTarget: "scalar" },
+    { key: "release", label: "release", unit: "s", type: "f", min: 0.01, max: 0.6, step: 0.01, modTarget: "scalar" },
+    { key: "level", label: "level", type: "f", min: 0, max: 1, step: 0.01, modTarget: "scalar" },
   ],
   "bass-synth": [
     { key: "wave", label: "waveform", type: "enum", options: WAVES },
-    { key: "cutoff", label: "filter cut", unit: "Hz", type: "f", min: 80, max: 2000, step: 10 },
-    { key: "q", label: "resonance", type: "f", min: 0.3, max: 18, step: 0.1 },
-    { key: "attack", label: "attack", unit: "s", type: "f", min: 0.001, max: 0.1, step: 0.001 },
-    { key: "gate", label: "length", unit: "s", type: "f", min: 0.1, max: 1.5, step: 0.01 },
-    { key: "level", label: "level", type: "f", min: 0, max: 1, step: 0.01 },
+    { key: "cutoff", label: "filter cut", unit: "Hz", type: "f", min: 80, max: 2000, step: 10, modTarget: "param" },
+    { key: "q", label: "resonance", type: "f", min: 0.3, max: 18, step: 0.1, modTarget: "param" },
+    { key: "attack", label: "attack", unit: "s", type: "f", min: 0.001, max: 0.1, step: 0.001, modTarget: "scalar" },
+    { key: "gate", label: "length", unit: "s", type: "f", min: 0.1, max: 1.5, step: 0.01, modTarget: "scalar" },
+    { key: "level", label: "level", type: "f", min: 0, max: 1, step: 0.01, modTarget: "scalar" },
   ],
   "organ": [
-    { key: "p1", label: "drawbar 1×", type: "f", min: 0, max: 1, step: 0.01 },
-    { key: "p2", label: "drawbar 2×", type: "f", min: 0, max: 1, step: 0.01 },
-    { key: "p3", label: "drawbar 3×", type: "f", min: 0, max: 1, step: 0.01 },
-    { key: "p4", label: "drawbar 4×", type: "f", min: 0, max: 1, step: 0.01 },
-    { key: "attack", label: "attack", unit: "s", type: "f", min: 0.001, max: 0.2, step: 0.001 },
-    { key: "gate", label: "length", unit: "s", type: "f", min: 0.1, max: 1.5, step: 0.01 },
-    { key: "release", label: "release", unit: "s", type: "f", min: 0.01, max: 0.6, step: 0.01 },
-    { key: "level", label: "level", type: "f", min: 0, max: 1, step: 0.01 },
+    { key: "p1", label: "drawbar 1×", type: "f", min: 0, max: 1, step: 0.01, modTarget: "scalar" },
+    { key: "p2", label: "drawbar 2×", type: "f", min: 0, max: 1, step: 0.01, modTarget: "scalar" },
+    { key: "p3", label: "drawbar 3×", type: "f", min: 0, max: 1, step: 0.01, modTarget: "scalar" },
+    { key: "p4", label: "drawbar 4×", type: "f", min: 0, max: 1, step: 0.01, modTarget: "scalar" },
+    { key: "attack", label: "attack", unit: "s", type: "f", min: 0.001, max: 0.2, step: 0.001, modTarget: "scalar" },
+    { key: "gate", label: "length", unit: "s", type: "f", min: 0.1, max: 1.5, step: 0.01, modTarget: "scalar" },
+    { key: "release", label: "release", unit: "s", type: "f", min: 0.01, max: 0.6, step: 0.01, modTarget: "scalar" },
+    { key: "level", label: "level", type: "f", min: 0, max: 1, step: 0.01, modTarget: "scalar" },
   ],
 };
 
@@ -102,6 +131,62 @@ export function resetTone(voiceId) {
   if (!toneParams[voiceId]) return null;
   toneParams[voiceId] = { ...TONE_DEFAULTS[voiceId] };
   return toneParams[voiceId];
+}
+
+// ── live modulation state (v1.5) ────────────────────────────────────────────
+// voiceId -> { key: { rate, depth, lo, hi, phase } }. Only `rate` is UI-set
+// today; depth/lo/hi/phase are RESERVED per owner directive (future min/max
+// markers plug in here without storage or math changes) and every reader has
+// a default: depth 1 (full 0–100% swing), lo/hi = schema min/max, phase 0.
+const modState = {};
+const SCHEMA_BY = {};
+for (const id of Object.keys(TONE_SCHEMA)) {
+  modState[id] = {};
+  const o = {};
+  for (const d of TONE_SCHEMA[id]) o[d.key] = d;
+  SCHEMA_BY[id] = o;
+}
+export function getMods(voiceId) { return modState[voiceId] || null; }
+export function setMods(voiceId, mods) {
+  if (!(voiceId in modState)) return null;
+  modState[voiceId] = mods && typeof mods === "object" ? mods : {};
+  return modState[voiceId];
+}
+export function clearMods(voiceId) { if (modState[voiceId]) modState[voiceId] = {}; }
+export function hasMods(voiceId) {
+  const m = modState[voiceId];
+  return !!m && Object.keys(m).length > 0;
+}
+
+// owner semantics: the parameter oscillates its FULL [lo,hi] span as a sine,
+// phase-locked to the MASTER TICK grid (cycle = 1920/rate ticks, so BPM
+// changes retune it; all voices/notes share one LFO clock). Scalar targets
+// sample it per note; AudioParam targets get a live oscillator edge (engine
+// provides it via the trigger's modCtx: {tick, tickAt, oscFor}).
+function modSpan(d, md) {
+  const lo = Number.isFinite(md.lo) ? Math.max(d.min, md.lo) : d.min;
+  const hi = Number.isFinite(md.hi) ? Math.min(d.max, md.hi) : d.max;
+  const depth = Number.isFinite(md.depth) ? Math.max(0, Math.min(1, md.depth)) : 1;
+  return { mid: (lo + hi) / 2, amp: ((hi - lo) / 2) * depth };
+}
+function modSample(d, md, tick) {
+  const { mid, amp } = modSpan(d, md);
+  const cyc = lfoCycleTicks(md.rate || LFO_DEFAULT_RATE);
+  return mid + amp * Math.sin(2 * Math.PI * (tick / cyc + (md.phase || 0)));
+}
+// continuous edge on a real AudioParam: automation carries the mid, this
+// oscillator+depth-gain adds amp·sin for the life of the note
+function attachModEdge(ctx, m, voiceId, key, param, endT) {
+  const md = (modState[voiceId] || {})[key];
+  if (!md || !m || typeof m.oscFor !== "function") return;
+  const osc = m.oscFor(md.rate || LFO_DEFAULT_RATE);
+  if (!osc) return;
+  const { amp } = modSpan(SCHEMA_BY[voiceId][key], md);
+  const g = ctx.createGain();
+  g.gain.value = amp;
+  osc.connect(g); g.connect(param);
+  const ms = Math.max(40, (endT - ctx.currentTime) * 1000) + 60;
+  setTimeout(() => { try { g.disconnect(); osc.disconnect(g); } catch (e) { /* gone */ } }, ms);
 }
 
 // ── Drum voices ──────────────────────────────────────────────────────────────
@@ -157,52 +242,91 @@ function triggerHat(ctx, dest, time, dur, vel, open) {
 }
 
 // ── Melodic voices (pitch comes via midiNote; transposition overlay later) ──
+// Optional 7th arg `m` = modulation context {tick, tickAt, oscFor} — present
+// only when the voice has active ∿ mods (engine builds it per note). Scalar
+// params sample the global sine at the note's master tick; param targets keep
+// their automation (at the span mid when modulated) plus a live osc edge.
 
-function triggerLead(ctx, dest, time, dur, vel, midi) {
-  const p = toneFor("lead-synth");
-  const v = (vel / 127) * p.level;
-  const gate = Math.max(0.08, Math.min(dur, p.gate));
+function triggerLead(ctx, dest, time, dur, vel, midi, m) {
+  const id = "lead-synth";
+  const p = toneFor(id);
+  const mods = m ? getMods(id) : null;
+  const sc = (key) => {
+    const md = mods && mods[key];
+    return md ? modSample(SCHEMA_BY[id][key], md, m.tick) : p[key];
+  };
+  const v = (vel / 127) * sc("level");
+  const attack = Math.max(0.0005, sc("attack"));
+  const release = Math.max(0.005, sc("release"));
+  const gate = Math.max(0.08, Math.min(dur, sc("gate")));
+  const mC = mods && mods.cutoff, mE = mods && mods.cutoffEnd, mQ = mods && mods.q;
   const lp = ctx.createBiquadFilter();
-  lp.type = "lowpass"; lp.Q.value = p.q;
-  lp.frequency.setValueAtTime(p.cutoff, time);
-  lp.frequency.exponentialRampToValueAtTime(p.cutoffEnd, time + gate);
+  lp.type = "lowpass";
+  if (mQ) { lp.Q.value = modSpan(SCHEMA_BY[id].q, mQ).mid; attachModEdge(ctx, m, id, "q", lp.Q, time + gate + release); }
+  else lp.Q.value = p.q;
+  const cStart = mC ? modSpan(SCHEMA_BY[id].cutoff, mC).mid : p.cutoff;
+  const cEnd = mE ? modSpan(SCHEMA_BY[id].cutoffEnd, mE).mid : p.cutoffEnd;
+  lp.frequency.setValueAtTime(Math.max(20, cStart), time);
+  lp.frequency.exponentialRampToValueAtTime(Math.max(20, cEnd), time + gate);
+  if (mC) attachModEdge(ctx, m, id, "cutoff", lp.frequency, time + gate + release);
+  if (mE) attachModEdge(ctx, m, id, "cutoffEnd", lp.frequency, time + gate + release);
   const g = ctx.createGain();
   g.gain.setValueAtTime(0.0001, time);
-  g.gain.linearRampToValueAtTime(v, time + p.attack);
+  g.gain.linearRampToValueAtTime(v, time + attack);
   g.gain.setValueAtTime(v, time + gate * 0.7);
-  g.gain.exponentialRampToValueAtTime(0.0001, time + gate + p.release);
+  g.gain.exponentialRampToValueAtTime(0.0001, time + gate + release);
   lp.connect(g); g.connect(dest);
-  startOsc(ctx, p.wave, mtof(midi), time, time + gate + p.release + 0.02).connect(lp);
+  startOsc(ctx, p.wave, mtof(midi), time, time + gate + release + 0.02).connect(lp);
 }
 
-function triggerBass(ctx, dest, time, dur, vel, midi) {
-  const p = toneFor("bass-synth");
-  const v = (vel / 127) * p.level;
-  const gate = Math.max(0.08, Math.min(dur, p.gate));
+function triggerBass(ctx, dest, time, dur, vel, midi, m) {
+  const id = "bass-synth";
+  const p = toneFor(id);
+  const mods = m ? getMods(id) : null;
+  const sc = (key) => {
+    const md = mods && mods[key];
+    return md ? modSample(SCHEMA_BY[id][key], md, m.tick) : p[key];
+  };
+  const v = (vel / 127) * sc("level");
+  const attack = Math.max(0.0005, sc("attack"));
+  const gate = Math.max(0.08, Math.min(dur, sc("gate")));
   const lp = ctx.createBiquadFilter();
-  lp.type = "lowpass"; lp.frequency.value = p.cutoff; lp.Q.value = p.q;
-  const g = envGain(ctx, lp, time, v, gate, p.attack);
+  lp.type = "lowpass";
+  const mC = mods && mods.cutoff, mQ = mods && mods.q;
+  lp.frequency.value = mC ? modSpan(SCHEMA_BY[id].cutoff, mC).mid : p.cutoff;
+  lp.Q.value = mQ ? modSpan(SCHEMA_BY[id].q, mQ).mid : p.q;
+  if (mC) attachModEdge(ctx, m, id, "cutoff", lp.frequency, time + gate + 0.05);
+  if (mQ) attachModEdge(ctx, m, id, "q", lp.Q, time + gate + 0.05);
+  const g = envGain(ctx, lp, time, v, gate, attack);
   lp.connect(dest);
   startOsc(ctx, p.wave, mtof(midi - 12), time, time + gate + 0.05).connect(g);
   startOsc(ctx, "sine", mtof(midi - 24), time, time + gate + 0.05).connect(g);
 }
 
-function triggerOrgan(ctx, dest, time, dur, vel, midi) {
-  const p = toneFor("organ");
-  const v = (vel / 127) * p.level;
-  const gate = Math.max(0.1, Math.min(dur, p.gate));
+function triggerOrgan(ctx, dest, time, dur, vel, midi, m) {
+  const id = "organ";
+  const p = toneFor(id);
+  const mods = m ? getMods(id) : null;
+  const sc = (key) => {
+    const md = mods && mods[key];
+    return md ? modSample(SCHEMA_BY[id][key], md, m.tick) : p[key];
+  };
+  const v = (vel / 127) * sc("level");
+  const attack = Math.max(0.0005, sc("attack"));
+  const release = Math.max(0.005, sc("release"));
+  const gate = Math.max(0.1, Math.min(dur, sc("gate")));
   const out = ctx.createGain();
   out.gain.setValueAtTime(0.0001, time);
-  out.gain.linearRampToValueAtTime(v, time + p.attack);
+  out.gain.linearRampToValueAtTime(v, time + attack);
   out.gain.setValueAtTime(v, time + gate);
-  out.gain.exponentialRampToValueAtTime(0.0001, time + gate + p.release);
+  out.gain.exponentialRampToValueAtTime(0.0001, time + gate + release);
   out.connect(dest);
-  // drawbar-ish partials: [harmonic multiple, level] — levels are the dials
+  // drawbar-ish partials: [harmonic multiple, level] — levels are the dials (each modulatable)
   const base = mtof(midi);
-  const partials = [[1, p.p1], [2, p.p2], [3, p.p3], [4, p.p4]];
+  const partials = [[1, sc("p1")], [2, sc("p2")], [3, sc("p3")], [4, sc("p4")]];
   for (const [mult, amp] of partials) {
     if (amp <= 0) continue;
-    const o = startOsc(ctx, "sine", base * mult, time, time + gate + p.release + 0.03);
+    const o = startOsc(ctx, "sine", base * mult, time, time + gate + release + 0.03);
     const pg = ctx.createGain();
     pg.gain.value = amp * 0.25; // partial mix level
     o.connect(pg);

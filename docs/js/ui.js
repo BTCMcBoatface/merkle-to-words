@@ -8,21 +8,35 @@ import { deriveMelody, noteName, CELL_TICKS, foldMidi, mapTicksFor } from "./not
 import { fetchTip, fetchByHeight } from "./api.js";
 import { downloadMidi, downloadMidiMapped } from "./smf.js";
 import { Ensemble, MAX_BLOCKS } from "./engine.js";
-import { getVoice, TONE_SCHEMA, TONE_DEFAULTS, toneFor, setTone, resetTone } from "./synth.js";
+import { getVoice, TONE_SCHEMA, TONE_DEFAULTS, toneFor, setTone, resetTone, LFO_RATES, LFO_DEFAULT_RATE, getMods, setMods, clearMods } from "./synth.js";
 import { DRUM_LANES, LANE_LABELS } from "./seq.js";
 import * as tonebank from "./tonebank.js";
 import { APP_VERSION } from "./version.js";
 import * as session from "./state.js";
 
 const LIVE_POLL_MS = 60000;
-const SNAP_KEY = "m2m…s-v1";
+const SNAP_KEY = "m2m-snapshots-v1";
+const SNAP_KEY_LEGACY = "m2m…s-v1"; // pre-v1.5 shipped constant (stray “…” glyph — intentional literal, migration-only)
+function migrateSnaps() {
+  try {
+    if (localStorage.getItem(SNAP_KEY) === null && localStorage.getItem(SNAP_KEY_LEGACY) !== null) {
+      localStorage.setItem(SNAP_KEY, localStorage.getItem(SNAP_KEY_LEGACY));
+      localStorage.removeItem(SNAP_KEY_LEGACY);
+    }
+  } catch (e) { /* private mode */ }
+}
 
 const engine = new Ensemble();
 // sound layer (local-only persistence — see tonebank.js): restore before boot
 const bank = tonebank.load() || tonebank.blank();
-for (const id of Object.keys(TONE_SCHEMA)) setTone(id, bank.tone[id]);
+for (const id of Object.keys(TONE_SCHEMA)) {
+  setTone(id, bank.tone[id]);
+  setMods(id, (bank.mods && bank.mods[id]) || {});
+}
 engine.setReverb(bank.reverb);
 let openTone = null;         // slot index whose tone panel is open (view state)
+let uiLfoRate = LFO_DEFAULT_RATE;  // ∿ cycle chooser in the tone panel
+let lastModToggle = { voice: null, key: null, t: 0 }; // double-fire guard (touch long-press + synthetic contextmenu)
 let blocks = [];             // [{height, rootHex, pattern, melody?, scale?}]
 let selected = null;       // {kind:'block'|'slot', idx} — tap-to-move mode
 let busy = false;
@@ -575,7 +589,7 @@ function exportPitchSets(b) {
 }
 
 // ── snapshots ──
-function loadSnaps() { try { return JSON.parse(localStorage.getItem(SNAP_KEY)) || []; } catch (e) { return []; } }
+function loadSnaps() { migrateSnaps(); try { return JSON.parse(localStorage.getItem(SNAP_KEY)) || []; } catch (e) { return []; } }
 function saveSnaps(list) { try { localStorage.setItem(SNAP_KEY, JSON.stringify(list)); } catch (e) { } }
 $("#snapSave").addEventListener("click", () => {
   const name = $("#snapName").value.trim() || `arr ${new Date().toLocaleTimeString()}`;
@@ -597,8 +611,20 @@ $("#snapSave").addEventListener("click", () => {
 // input — dragging a slider must not rebuild the DOM under the finger.
 function persistTone(voiceId) {
   bank.tone[voiceId] = { ...toneFor(voiceId) };
+  bank.mods[voiceId] = JSON.parse(JSON.stringify(getMods(voiceId) || {}));
   tonebank.save(bank);
 }
+function toggleMod(voiceId, d) {
+  const now = Date.now();
+  if (lastModToggle.voice === voiceId && lastModToggle.key === d.key && now - lastModToggle.t < 450) return;
+  lastModToggle = { voice: voiceId, key: d.key, t: now };
+  const mods = getMods(voiceId);
+  if (mods[d.key]) { delete mods[d.key]; setStatus(`∿ ${d.label} oscillation off`); }
+  else { mods[d.key] = { rate: uiLfoRate }; setStatus(`∿ ${d.label} oscillates min↔max once per ${rateName(uiLfoRate)}`); }
+  persistTone(voiceId);
+  render();
+}
+const rateName = (steps) => (LFO_RATES.find((r) => r.steps === steps) || LFO_RATES[3]).name;
 function fmt(d, v) {
   if (d.unit === "Hz") return String(Math.round(v));
   if (d.unit === "s") return String(Math.round(v * 1000) / 1000);
@@ -631,6 +657,27 @@ function buildTonePanel(voiceId) {
   head.appendChild(ttl); head.appendChild(x);
   wrap.appendChild(head);
 
+  // ∿ cycle chooser: a complete sine loop over the chosen musical duration
+  const crow = document.createElement("div");
+  crow.className = "wrow crow";
+  const clbl = document.createElement("span");
+  clbl.textContent = "∿ cycle";
+  crow.appendChild(clbl);
+  for (const r of LFO_RATES) {
+    const b = document.createElement("button");
+    b.textContent = r.label; b.title = `one full min→max→min cycle per ${r.name}`;
+    if (uiLfoRate === r.steps) b.classList.add("sel");
+    b.addEventListener("click", () => {
+      uiLfoRate = r.steps;
+      const mods = getMods(voiceId);
+      for (const k of Object.keys(mods)) mods[k].rate = r.steps; // retune all live mods
+      persistTone(voiceId);
+      render();
+    });
+    crow.appendChild(b);
+  }
+  wrap.appendChild(crow);
+
   for (const d of TONE_SCHEMA[voiceId]) {
     const row = document.createElement("div");
     if (d.type === "enum") {
@@ -652,8 +699,11 @@ function buildTonePanel(voiceId) {
       }
     } else {
       row.className = "frow";
+      const modded = !!(getMods(voiceId) || {})[d.key];
+      if (modded) row.classList.add("mod");
+      row.title = "right-click / long-press: oscillate this dial min↔max";
       const lbl = document.createElement("label");
-      lbl.textContent = d.label;
+      lbl.textContent = (modded ? "∿ " : "") + d.label;
       const inp = document.createElement("input");
       inp.type = "range"; inp.min = d.min; inp.max = d.max; inp.step = d.step; inp.value = p[d.key];
       inp.setAttribute("aria-label", `${d.label} (${voiceId})`);
@@ -663,6 +713,25 @@ function buildTonePanel(voiceId) {
         p[d.key] = parseFloat(inp.value);
         out.textContent = fmt(d, p[d.key]);
         persistTone(voiceId);
+      });
+      // toggle the oscillation: right-click anywhere on the row (desktop) or
+      // a 500 ms hold without drag (touch); deduped via lastModToggle
+      row.addEventListener("contextmenu", (e) => {
+        e.preventDefault(); e.stopPropagation();
+        toggleMod(voiceId, d);
+      });
+      inp.addEventListener("pointerdown", (e) => {
+        if (e.button === 2) return; // handled by contextmenu
+        const sx = e.clientX, sy = e.clientY;
+        let timer = setTimeout(() => {
+          timer = null;
+          toggleMod(voiceId, d);
+        }, 500);
+        const cancel = () => { if (timer) { clearTimeout(timer); timer = null; } };
+        const move = (ev) => { if (Math.hypot(ev.clientX - sx, ev.clientY - sy) > 10) cancel(); };
+        inp.addEventListener("pointermove", move);
+        inp.addEventListener("pointerup", cancel);
+        inp.addEventListener("pointercancel", cancel);
       });
       row.appendChild(lbl); row.appendChild(inp); row.appendChild(out);
     }
@@ -678,7 +747,7 @@ function buildTonePanel(voiceId) {
   sv.className = "btn mini"; sv.textContent = "💾 save";
   sv.addEventListener("click", () => {
     const nm = nameIn.value.trim() || `tone ${new Date().toLocaleTimeString()}`;
-    tonebank.addFav(bank, voiceId, nm, { ...p });
+    tonebank.addFav(bank, voiceId, nm, { ...p }, getMods(voiceId));
     setStatus(`favorite "${nm}" saved (${(bank.favs[voiceId] || []).length}/8)`);
     render();
   });
@@ -686,8 +755,9 @@ function buildTonePanel(voiceId) {
   const rst = document.createElement("button");
   rst.className = "btn mini"; rst.textContent = "reset";
   rst.title = "back to this voice's built-in defaults";
+  rst.title = "back to this voice's built-in defaults (also clears ∿ mods)";
   rst.addEventListener("click", () => {
-    setTone(voiceId, TONE_DEFAULTS[voiceId]); persistTone(voiceId);
+    setTone(voiceId, TONE_DEFAULTS[voiceId]); clearMods(voiceId); persistTone(voiceId);
     setStatus(`${getVoice(voiceId).label}: tone reset to defaults`);
     render();
   });
@@ -702,8 +772,10 @@ function buildTonePanel(voiceId) {
     const use = document.createElement("button");
     use.textContent = "use";
     use.addEventListener("click", () => {
-      setTone(voiceId, f.params); persistTone(voiceId);
-      setStatus(`tone "${f.name}" loaded`);
+      setTone(voiceId, f.params);
+      setMods(voiceId, f.mods || {});
+      persistTone(voiceId);
+      setStatus(`tone "${f.name}" loaded${Object.keys(f.mods || {}).length ? ` (with ∿ ${Object.keys(f.mods).length} mod${Object.keys(f.mods).length > 1 ? "s" : ""})` : ""}`);
       render();
     });
     const del = document.createElement("button");

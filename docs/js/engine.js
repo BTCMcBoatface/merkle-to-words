@@ -20,7 +20,7 @@
 //     Arrival-driven rotation lives in ui.js; the engine owns the mechanism.
 
 import { BAR_TICKS, NOTE_VELOCITY } from "./protocol.js";
-import { getVoice, VOICES } from "./synth.js";
+import { getVoice, VOICES, hasMods, lfoCycleTicks } from "./synth.js";
 import { CELL_TICKS, foldMidi, mapTicksFor, POLY_STACK_CAP, KEY_OFFSET_CAP, DEFAULT_MAP_BARS, MAP_BAR_OPTIONS, MAP_MAX_COLS } from "./notes.js";
 import { SEQ_DEFAULT_RES, SEQ_DEFAULT_BARS, SEQ_MAX_STEPS, SEQ_RESOLUTIONS, SEQ_EXTENTS, DRUM_LANES, seqCellTicks, seqActiveCols, quantizeBlockCols, resnapCells } from "./seq.js";
 
@@ -53,6 +53,7 @@ export class Ensemble {
     this._wet = null;         // per-play wet gain node
     this._ir = null;          // cached convolver (per AudioContext)
     this._irCtx = null;
+    this._lfos = {};          // v1.5 tempo-synced sine oscillators, rate(steps/bar) -> OscillatorNode
     this.slots = SLOT_INSTRUMENTS.map((voiceId) => ({
       voiceId, block: null, part: null, muted: false, transpose: 0,
     }));
@@ -174,6 +175,37 @@ export class Ensemble {
       this.slots[i].part = src.part;
     }
     this.emit();
+  }
+
+  // ── tempo-synced LFO service (v1.5 modulation; render-time) ──
+  // One shared sine oscillator per rate, phase origin = transport tick 0
+  // (start(startTime) with a past time is legal and locks phase). Frequency is
+  // musical: rate steps/bar → Hz = tps / cycleTicks, retuned at every tempo
+  // commit. Only created when a voice actually uses a mod (lazy, zero-cost off).
+  _lfo(rateSteps) {
+    if (!this.playing || !this.ctx) return null;
+    let o = this._lfos[rateSteps];
+    if (!o) {
+      o = this.ctx.createOscillator();
+      o.type = "sine";
+      o.frequency.value = this._tpsBase / lfoCycleTicks(rateSteps);
+      try { o.start(this.startTime); } catch (e) { o = null; }
+      if (o) this._lfos[rateSteps] = o;
+    }
+    return o || null;
+  }
+  _resyncLfos() {
+    for (const r of Object.keys(this._lfos)) {
+      try {
+        this._lfos[r].frequency.setTargetAtTime(this._tpsBase / lfoCycleTicks(+r), this.ctx.currentTime, 0.03);
+      } catch (e) { /* gone */ }
+    }
+  }
+  _killLfos() {
+    for (const r of Object.keys(this._lfos)) {
+      try { this._lfos[r].stop(); this._lfos[r].disconnect(); } catch (e) { /* gone */ }
+    }
+    this._lfos = {};
   }
 
   // ── melody map + source + capo (M2M-NOTES v2.1; player-side) ──
@@ -397,6 +429,7 @@ export class Ensemble {
     this._segments = [{ tick0: 0, time0: this.startTime, tps: this._tpsBase }];
     this._pending = null;
     this._cycleIdx = 0;
+    this._lfos = {};   // fresh LFO service; oscillators spawn lazily per rate
     for (const s of this.slots) {
       s.part = s.block ? this._buildPart(s.block, false) : null;
     }
@@ -421,6 +454,7 @@ export class Ensemble {
       }, 250);
     }
     this.bus = null; this._comp = null; this._wet = null;
+    this._killLfos();
     this.playing = false;
     this._segments = null; this._pending = null; // discard uncommitted tempo
     this.seq.cursors = null;
@@ -462,6 +496,7 @@ export class Ensemble {
       this._segments.push({ tick0: b, time0: t0, tps: tpsFor(this._pending.bpm) });
       this._tpsBase = tpsFor(this._pending.bpm);
       this._pending = null;
+      this._resyncLfos();   // musical-cycle LFOs retune at the same boundary
       this.emit();
     }
     const horizon = this._tickAt(now + LOOKAHEAD_SEC);
@@ -490,8 +525,13 @@ export class Ensemble {
           const at = Math.max(this._timeAt(abs), now + 0.004);
           const dur = o.soundingTicks / this._tpsBase;
           if (voice.melodic) {
+            // v1.5: modulation context only when the voice actually has ∿ mods —
+            // {tick: master tick at onset, oscFor: shared transport-locked LFO}
+            const md = hasMods(voice.id)
+              ? { tick: abs, oscFor: (r) => this._lfo(r) }
+              : undefined;
             for (const midi of this._pitchStackFor(abs, p, evIdx, voice, s))
-              voice.trigger(ctx, this.bus, at, dur, NOTE_VELOCITY, midi);
+              voice.trigger(ctx, this.bus, at, dur, NOTE_VELOCITY, midi, md);
           } else {
             voice.trigger(ctx, this.bus, at, dur, NOTE_VELOCITY, 0);
           }
