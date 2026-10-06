@@ -48,6 +48,31 @@
       </div>
     </section>
 
+    <section id="seqSection" aria-label="Drum sequencer">
+      <h2>Drum sequencer <span class="draft">ribbons · quantize</span></h2>
+      <div id="seqBar">
+        <span class="seg" id="seqResSeg">
+          <button data-res="1" class="btn mini">𝅝</button>
+          <button data-res="2" class="btn mini">𝅗𝅥</button>
+          <button data-res="4" class="btn mini">♩</button>
+          <button data-res="8" class="btn mini sel">♪</button>
+          <button data-res="16" class="btn mini">♬</button>
+          <span class="seglbl">grid</span>
+        </span>
+        <span class="seg" id="seqBarsSeg">
+          <button data-sbars="1" class="btn mini">1</button>
+          <button data-sbars="2" class="btn mini">2</button>
+          <button data-sbars="4" class="btn mini sel">4</button>
+          <button data-sbars="8" class="btn mini">8</button>
+          <button data-sbars="16" class="btn mini">16</button>
+          <span class="seglbl">bars</span>
+        </span>
+        <button id="seqClearBtn" class="btn mini" title="clear all painted steps (inherited ghosts stay)">clear steps</button>
+        <span class="seglbl">tap = hit ▸ rest ▸ clear · drag to paint · gutter ▸raw/▸seq switches the lane</span>
+      </div>
+      <div id="seqWrap"><canvas id="seqCanvas" width="640" height="106"></canvas></div>
+    </section>
+
     <section id="shelfSection" aria-label="Block collection">
       <h2>Blocks <span class="count" id="blockCount"></span></h2>
       <div id="shelf"></div>

@@ -139,8 +139,12 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: var
 #mapBar .seg { display: flex; gap: 4px; align-items: center; }
 #mapBar .chk { font-size: 11px; color: var(--dim); display: flex; align-items: center; gap: 4px; }
 .keycap { color: var(--accent); font-size: 11px; min-width: 26px; text-align: center; }
-#mapWrap { overflow-x: auto; border: 1.5px solid var(--line); border-radius: 10px; background: #12141b; }
-#mapCanvas { display: block; touch-action: none; cursor: crosshair; }
+#mapWrap, #seqWrap { overflow-x: auto; border: 1.5px solid var(--line); border-radius: 10px; background: #12141b; }
+#mapCanvas, #seqCanvas { display: block; touch-action: none; cursor: crosshair; }
+
+/* drum sequencer (ribbons) */
+#seqBar { display: flex; gap: 8px; margin: 4px 0 8px; flex-wrap: wrap; align-items: center; }
+#seqBar .seg { display: flex; gap: 4px; align-items: center; }
 
 #mapRow, #snapRow { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; align-items: center; }
 #fillSelect {

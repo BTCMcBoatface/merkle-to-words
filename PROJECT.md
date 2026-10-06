@@ -28,7 +28,7 @@ Three pillars:
 | Protocols | Rhythm `M2M-RHYTHM/1.0.2` **frozen** (1.0.1/1.0.2 editorial; derivation unchanged since 1.0.0). Pitched `M2M-NOTES/2.1.0` **frozen Oct 1** — 2.0.0 piano-roll MAJOR (own-length looping map, mono + ≤7 chords, drag brush) then 2.1.0 MINOR/PATCH: 1/2-bar extents over a fixed 128-col store (non-destructive shrink/grow), map capo, ♯-fold view; eighth cell corrected to 240 ticks (frozen text's "600" was a typo). Fixtures in `tests/`. |
 | Python reference | **Conforms** — §7.4 cyclic reuse + exact-fill stop, both scripts; disjoint bits 11–18 pitch fix (OP1); validated over 240 synthetic roots. |
 | JS derivation + SMF writers | **Conforms** — `node tests/verify.mjs` PASS 98/98 (rhythm + NOTES: melody32, scale params, pitchBytes, mapped-SMF bytes); canonical downloads byte-identical to mido. |
-| Player features shipped | **app v1.3.1** (versioned via `docs/js/version.js`, header + snapshots): **sound layer — per-voice tone panels as instrument POPUPS (≥2 card widths / ~70vw; lead: wave/filter-open/close/resonance/attack/length/release/level; bass: wave/cutoff/resonance/attack/length/level; organ: 4 drawbars/attack/length/release/level), named favorites (cap 8/voice) + current settings + whole-mix reverb knob — all localStorage via `tonebank.js`, never session URL/snapshots/files**; blocks-on-request (tip/height, shelf-by-default), 7 slots + shelf (max 8), drag & tap-move, **assign dropdown per block (evict-to-shelf)**, mute, independent/master loop modes, ⟲ re-align, session URL+localStorage mirror, per-block `.mid` download, transpose ±1/±12 (melodic only), BPM box 20–300 (boundary commit), LIVE mode (60 s poll, evict-oldest, arrival-driven rotation), snapshots (cap 20), melody map piano roll (drag-paint, **1/2/4/8/16-bar extents over fixed 128-col store**, mono/chords ≤7, **map capo ±1**, **♯-fold view with hidden-sharp markers**, merkle-fill, mapped export ⤓), **two-click CLEAR** |
+| Player features shipped | **app v1.4.0** (versioned via `docs/js/version.js`, header + snapshots): **drum sequencer — four quantized ribbons (kick/snare/hat·c/hat·o, customary bottom→top order), per-lane raw▸seq switch (raw = status quo default), tri-state steps inherit/on/rest over the block's quantized rhythm, live whole→16th grid + map-style 1/2/4/8/16-bar extents, lanes sound standalone, session-carried (`&e &j &i &d` + snapshots)**; **sound layer — per-voice tone panels as instrument POPUPS (≥2 card widths / ~70vw; lead: wave/filter-open/close/resonance/attack/length/release/level; bass: wave/cutoff/resonance/attack/length/level; organ: 4 drawbars/attack/length/release/level), named favorites (cap 8/voice) + current settings + whole-mix reverb knob — all localStorage via `tonebank.js`, never session URL/snapshots/files**; blocks-on-request (tip/height, shelf-by-default), 7 slots + shelf (max 8), drag & tap-move, **assign dropdown per block (evict-to-shelf)**, mute, independent/master loop modes, ⟲ re-align, session URL+localStorage mirror, per-block `.mid` download, transpose ±1/±12 (melodic only), BPM box 20–300 (boundary commit), LIVE mode (60 s poll, evict-oldest, arrival-driven rotation), snapshots (cap 20), melody map piano roll (drag-paint, **1/2/4/8/16-bar extents over fixed 128-col store**, mono/chords ≤7, **map capo ±1**, **♯-fold view with hidden-sharp markers**, merkle-fill, mapped export ⤓), **two-click CLEAR** |
 | Needs eyes/ears | Human browser pass never done — phone (iOS audio unlock, tap-to-move, live/paint ergonomics) + desktop |
 | Pages deploy | Repo public; serve from `main` → `/docs` |
 | `midi-files/`, `notes-midi/` archives | Pre-patch patterns; regeneration **deliberately deferred** |
@@ -97,6 +97,10 @@ Three pillars:
 | Tone = expose what the synth already contains (Oct 5, BUILT v1.3.0) | Owner scope: lead/bass/organ dials only, "only what is built in, already there, and modifiable" — waveform (4 built-in osc types), filter cutoff/Q, envelope times, organ drawbars, level; no new signal sources, no LFO effects, drums untouched. TONE_DEFAULTS are the original hard-coded constants: a fresh session sounds exactly like pre-1.3.0 |
 | Sound settings are LOCAL-only (Oct 5) | Owner: persistence "based on a user's local browser storage" — current tones + favorites bank (cap 8/voice, reload one at a time) + reverb live in `tonebank.js` localStorage (`m2m-tones-v1`), NOT the session URL and not snapshots; share links stay arrangement-only, downloads stay canonical (§11 render-time rule holds) |
 | Reverb = ONE whole-mix knob (Oct 5) | Owner ruling: not per-instrument. Post-compressor send over a synthesized decaying-noise IR (no audio asset, no dependency); drums included; live-adjustable while playing |
+| Drum ribbons QUANTIZE, never re-derive (Oct 5, BUILT v1.4.0) | The sequencer is a view/mapping of §7.4 onsets onto a musical grid (nearest-cell, merge on collision) — E(R) stays the truth; switching back to "raw" plays the un-quantized merkle groove exactly as before. Tri-state cells (inherit/on/rest) so edits can ADD and PUNCH HOLES in the block rhythm; ghost markers show the quantized inheritance like ♯-fold notches showed hidden sharps |
+| Ribbon stack = customary keymap order (Oct 5) | Owner: bass & snare at the bottom, low→high — VOICES order already is kick(35)/snare(38)/hat-c(42)/hat-o(46); lanes draw bottom-up from that. Gutter tap flips a lane raw ▸ seq |
+| Seq grid is LIVE (Oct 5) | Owner: "quantizable between whole notes and 16th notes and adjustable on the fly" — res/extent switches re-snap painted cells (tick position preserved, nearest new cell, on-beats-rest on collision) and re-phase rolling cursors; quantized block layer recomputes automatically. Fixed 256-col store (16 bars of sixteenths) mirrors the map's fixed-store design |
+| Drum seq rides blocks, not replaces them (Oct 5, Q&A) | Q1: block-quantized + editable ribbon; Q2: map-style shared extents (lanes can't drift apart — "no block owns a groove" energy); Q3: seq lanes sound WITHOUT a block (full second performance source); Q4: session URL + snapshots like the melody map (it's composition; packed 4×tri-state fits ~18 bytes of &d for typical edits) |
 
 ## 5. Roadmap
 
@@ -107,11 +111,15 @@ Three pillars:
       (incl. hidden-tail restore on ×2), snapshot flow, mapped export. **New in
       v1.3.0: "sound" panels (slider feel, favorites save/use/✕), reverb knob on
       the transport, tone persistence across refresh, and whether reverb tails
-      sound right over the drums.**
+      sound right over the drums.
+- [ ] Browser pass for the drum sequencer (v1.4.0): tap-cycle feel (hit ▸ rest ▸
+      clear), stroke painting on phone touch, gutter lane-flips live while
+      playing, whole→16th morph while playing (cursor re-phase audible?), ghost
+      readability at 1/16 over 16 bars, and LIVE rotation re-voicing ribbons.**
 - [x] Commit current build (live mode + snapshots + melody map + NOTES freeze +
       version bumps) — `0ed82ba` pushed Oct 1.
-- [ ] Confirm live Pages URL serves the v1.3.1 build (hard-refresh past cache;
-      header tag should read `player v1.3.1`).
+- [ ] Confirm live Pages URL serves the v1.4.0 build (hard-refresh past cache;
+      header tag should read `player v1.4.0`).
 - [ ] One real public session link shared as the canonical smoke target.
 
 ### Shipped (Oct 1) — awaiting only the browser pass above
@@ -150,6 +158,14 @@ Three pillars:
       armed CLEAR: unassign everything to the shelf, keep collection + map + tempo,
       stop transport, disarm LIVE; no refetch/demo. First-load demo and LIVE auto-place
       remain the only automatic assignments (owner ruling). Snapshots stamp appVersion.
+- [x] **Drum sequencer — quantized ribbons (BUILT v1.4.0, Oct 5)** — dedicated section below the
+      melody map: 4 lanes in customary kit order (kick bottom ▸ hat·o top), each lane flips
+      raw(merkle) ▸ seq; seq plays the block's onsets quantized NEAREST-cell to the live grid
+      (whole/half/quarter/8th/16th, extents 1–16 bars, both switchable on the fly — painted
+      cells re-snap, block recomputes), with tri-state edits (on adds, rest punches holes);
+      lanes sound standalone with no block. Session + snapshots carry it (`&e &j &i &d`,
+      count-prefixed lane codec in `docs/js/seq.js`). Pure render-time — §7.4 derivation and
+      canonical `.mid` untouched; defaults = pre-1.4.0 behavior.
 - [ ] **Multiple melody maps → instruments** (owner's stated future: divergent
       notes/harmonies per instrument; lengths may differ → drift/offset by design).
       Prepared-for: map state is already a self-contained unit with per-map

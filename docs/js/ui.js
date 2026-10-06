@@ -9,6 +9,7 @@ import { fetchTip, fetchByHeight } from "./api.js";
 import { downloadMidi, downloadMidiMapped } from "./smf.js";
 import { Ensemble, MAX_BLOCKS } from "./engine.js";
 import { getVoice, TONE_SCHEMA, TONE_DEFAULTS, toneFor, setTone, resetTone } from "./synth.js";
+import { DRUM_LANES, LANE_LABELS } from "./seq.js";
 import * as tonebank from "./tonebank.js";
 import { APP_VERSION } from "./version.js";
 import * as session from "./state.js";
@@ -68,6 +69,12 @@ function view() {
     polyphony: engine.polyphony,
     mapOffset: engine.mapOffset,
     source: engine.melodySource,
+    seq: {
+      res: engine.seq.res,
+      bars: engine.seq.bars,
+      modes: Object.assign({}, engine.seq.modes),
+      cells: DRUM_LANES.reduce((o, id) => { o[id] = engine.seq.cells[id].slice(); return o; }, {}),
+    },
   };
 }
 function persist() { session.save(view()); }
@@ -228,6 +235,23 @@ $("#polyChk").addEventListener("change", (e) => {
 $("#octDown").addEventListener("click", () => { octShift = Math.max(-1, octShift - 1); drawMap(); });
 $("#octUp").addEventListener("click", () => { octShift = Math.min(4, octShift + 1); drawMap(); });
 
+// ── drum sequencer controls (on-the-fly grid morph; live-safe) ──
+document.querySelectorAll("#seqResSeg button").forEach((btn) =>
+  btn.addEventListener("click", () => {
+    engine.setSeqRes(parseInt(btn.dataset.res, 10));
+    persist(); render();
+  }));
+document.querySelectorAll("#seqBarsSeg button").forEach((btn) =>
+  btn.addEventListener("click", () => {
+    engine.setSeqBars(parseInt(btn.dataset.sbars, 10));
+    persist(); render();
+  }));
+$("#seqClearBtn").addEventListener("click", () => {
+  for (const id of DRUM_LANES) engine.seq.cells[id].fill(0);
+  setStatus("drum steps cleared — inherited block ghosts stay");
+  persist(); render();
+});
+
 $("#fillBtn").addEventListener("click", () => {
   const idx = parseInt($("#fillSelect").value, 10);
   const b = blocks[idx];
@@ -355,6 +379,14 @@ function syncMapBtns() {
   if (fb) { fb.classList.toggle("sel", foldSharps); fb.textContent = foldSharps ? "♯ folded" : "♯ fold"; }
 }
 
+function renderSeq() {
+  document.querySelectorAll("#seqResSeg button").forEach((btn) =>
+    btn.classList.toggle("sel", parseInt(btn.dataset.res, 10) === engine.seq.res));
+  document.querySelectorAll("#seqBarsSeg button").forEach((btn) =>
+    btn.classList.toggle("sel", parseInt(btn.dataset.sbars, 10) === engine.seq.bars));
+  drawSeq();
+}
+
 function renderMap() {
   // control sync
   $("#polyChk").checked = engine.polyphony;
@@ -381,6 +413,134 @@ function renderMap() {
 
 // mapped export pitch SETS: painted stack → else the block's merkle melody
 // (deterministic; voice defaults are a player concept and never enter files — §6)
+// ── drum sequencer (v1.4 ribbons) ──
+// Four horizontal lanes, customary kit order bottom→top (kick, snare, hat·c,
+// hat·o). One shared grid: extent in bars (map-style) × live resolution
+// (whole→16th). Cells are tri-state — tap cycles inherit ▸ on ▸ rest ▸ inherit;
+// a held stroke paints that target across the row; right-drag clears to
+// inherit. Inherited cells ghost the assigned block's quantized rhythm. Tapping
+// the gutter flips the lane raw-merkle ▸ seq-ribbon. Pure render-time: blocks
+// still derive E(R) untouched; "raw" lanes behave exactly as before.
+const SQ_ROWS = 4, SQ_ROW_H = 26, SQ_GUT = 46;
+let seqGeom = { cellW: 12, cols: 32 };
+let seqStroke = null, lastSeqXY = null;
+
+function seqCellFromXY(x, y) {
+  if (x < SQ_GUT) {
+    const r = Math.floor(y / SQ_ROW_H);
+    if (r < 0 || r >= SQ_ROWS) return null;
+    return { gutter: true, lane: DRUM_LANES[SQ_ROWS - 1 - r] };
+  }
+  const col = Math.floor((x - SQ_GUT) / seqGeom.cellW);
+  const r = Math.floor(y / SQ_ROW_H);
+  if (col < 0 || col >= seqGeom.cols || r < 0 || r >= SQ_ROWS) return null;
+  return { lane: DRUM_LANES[SQ_ROWS - 1 - r], col };
+}
+
+function drawSeq() {
+  const canvas = $("#seqCanvas"), wrap = $("#seqWrap");
+  if (!canvas || !wrap) return;
+  const cols = engine.seqActiveCols, res = engine.seq.res;
+  const cellW = Math.max(12, Math.floor((wrap.clientWidth - SQ_GUT - 6) / cols));
+  seqGeom = { cellW, cols };
+  canvas.width = SQ_GUT + cellW * cols;
+  canvas.height = SQ_ROWS * SQ_ROW_H + 2;
+  const g = canvas.getContext("2d");
+  g.clearRect(0, 0, canvas.width, canvas.height);
+
+  const quants = {};
+  for (const id of DRUM_LANES) quants[id] = engine.seqQuantCols(id);
+
+  for (let r = 0; r < SQ_ROWS; r++) {
+    const lane = DRUM_LANES[SQ_ROWS - 1 - r];          // bottom row = kick
+    const y = r * SQ_ROW_H;
+    const seqMode = engine.seq.modes[lane] === "seq";
+    g.fillStyle = seqMode ? "#1e2330" : "#141722";
+    g.fillRect(SQ_GUT, y, cellW * cols, SQ_ROW_H);
+    g.fillStyle = seqMode ? "#7dd3fc" : "#8a93a6";
+    g.font = "9px ui-monospace, Menlo, monospace";
+    g.fillText(LANE_LABELS[lane], 4, y + 11);
+    g.font = "8px sans-serif";
+    g.fillText(seqMode ? "▸ seq" : "▸ raw", 4, y + 23);
+
+    const cells = engine.seq.cells[lane], qset = quants[lane];
+    for (let c = 0; c < cols; c++) {
+      const x = SQ_GUT + c * cellW;
+      const st = cells[c];
+      if (st === 1) {
+        g.fillStyle = "#7dd3fc";
+        g.fillRect(x + 1, y + 2, Math.max(2, cellW - 2), SQ_ROW_H - 4);
+      } else if (st === 2) {
+        g.strokeStyle = "#f87171"; g.lineWidth = 1.4;
+        g.beginPath();
+        g.moveTo(x + 3, y + SQ_ROW_H / 2 - 4); g.lineTo(x + cellW - 3, y + SQ_ROW_H / 2 + 4);
+        g.moveTo(x + cellW - 3, y + SQ_ROW_H / 2 - 4); g.lineTo(x + 3, y + SQ_ROW_H / 2 + 4);
+        g.stroke();
+      } else if (qset && qset.has(c)) {
+        g.fillStyle = seqMode ? "rgba(125,211,252,.45)" : "rgba(125,211,252,.20)";
+        g.fillRect(x + 2, y + 4, Math.max(1, cellW - 4), SQ_ROW_H - 8);
+      }
+    }
+  }
+  const H = SQ_ROWS * SQ_ROW_H;
+  for (let c = 0; c <= cols; c++) {                     // beat/bar grid on top
+    const x = SQ_GUT + c * cellW + 0.5;
+    const isBar = c % res === 0;
+    const isBeat = res >= 4 && c % (res / 4) === 0;
+    g.strokeStyle = isBar ? "#4a5468" : (isBeat ? "rgba(42,48,64,.9)" : "rgba(42,48,64,.35)");
+    g.lineWidth = isBar ? 1.4 : 1;
+    g.beginPath(); g.moveTo(x, 0); g.lineTo(x, H); g.stroke();
+  }
+  g.fillStyle = "#8a93a6"; g.font = "8px sans-serif";
+  for (let b = 0; b < engine.seq.bars; b++) g.fillText(String(b + 1), SQ_GUT + b * res * cellW + 2, H - 2);
+}
+
+function seqStrokeAt(x, y) {
+  if (!seqStroke) return;
+  const h = seqCellFromXY(x, y);
+  if (!h || h.gutter || h.lane !== seqStroke.lane) return;
+  engine.seqPaint(h.lane, h.col, seqStroke.val);
+  drawSeq();
+}
+
+function wireSeqCanvas() {
+  const canvas = $("#seqCanvas");
+  canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+  canvas.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    const r = canvas.getBoundingClientRect();
+    const x = e.clientX - r.left, y = e.clientY - r.top;
+    const h = seqCellFromXY(x, y);
+    if (!h) return;
+    if (h.gutter) { engine.seqToggleMode(h.lane); persist(); render(); return; }
+    let val;
+    if (e.button === 2) { val = 0; engine.seqPaint(h.lane, h.col, 0); } // right-drag clears to inherit
+    else { val = engine.seqCycle(h.lane, h.col); }                      // tap: inherit ▸ on ▸ rest ▸ inherit
+    seqStroke = { lane: h.lane, val };
+    lastSeqXY = [x, y];
+    try { canvas.setPointerCapture(e.pointerId); } catch (err) { }
+    drawSeq();
+  });
+  canvas.addEventListener("pointermove", (e) => {
+    if (!seqStroke) return;
+    const r = canvas.getBoundingClientRect();
+    const xy = [e.clientX - r.left, e.clientY - r.top];
+    const [x0, y0] = lastSeqXY, [x1, y1] = xy;
+    const dist = Math.hypot(x1 - x0, y1 - y0);
+    const steps = Math.max(1, Math.ceil(dist / (seqGeom.cellW / 3)));
+    for (let k = 1; k <= steps; k++)
+      seqStrokeAt(x0 + (x1 - x0) * k / steps, y0 + (y1 - y0) * k / steps);
+    lastSeqXY = xy;
+  });
+  const endStroke = () => {
+    if (!seqStroke) return;
+    seqStroke = null;
+    persist(); render();
+  };
+  canvas.addEventListener("pointerup", endStroke);
+  canvas.addEventListener("pointercancel", endStroke);
+}
+
 // mapped export pitch SETS: painted column (capo applied) → else the block's
 // merkle melody (deterministic; voice defaults never enter files — M2M-NOTES §6).
 // Looping wraps at the ACTIVE extent (mapBars), never the 128-col storage.
@@ -550,7 +710,7 @@ function render() {
 
     const inst = document.createElement("div");
     inst.className = "inst";
-    inst.textContent = voice.label;
+    inst.textContent = voice.label + (!voice.melodic && engine.seq.modes[s.voiceId] === "seq" ? " · seq" : "");
     el.appendChild(inst);
 
     if (s.block) {
@@ -750,6 +910,7 @@ function render() {
   if (document.activeElement !== reverbIn) reverbIn.value = String(Math.round(engine.reverb * 100));
 
   renderMap();
+  renderSeq();
 
   // snapshots
   const list = $("#snapList");
@@ -875,6 +1036,7 @@ async function applySessionAsync(st) {
   });
   engine.emit();
   if (st.source) engine.setMelodySource(st.source);
+  engine.setSeqState(st.seq || null);
   engine.slots.forEach((s, i) => { s.block = null; s.part = null; });
   (st.slots || []).forEach((bi, i) => { if (bi >= 0 && blocks[bi]) engine.setSlot(i, blocks[bi]); });
   selected = null;
@@ -901,7 +1063,8 @@ async function bootFresh() {
   const st = session.load();
   if (st) await applySessionAsync(st); else await bootFresh();
   wireMapCanvas();
-  window.addEventListener("resize", () => { drawMap(); if (openTone !== null) render(); });
+  wireSeqCanvas();
+  window.addEventListener("resize", () => { drawMap(); drawSeq(); if (openTone !== null) render(); });
   render();
   window.__m2m = {
     engine, derivePattern, deriveMelody, blocks: () => blocks,

@@ -22,6 +22,7 @@
 import { BAR_TICKS, NOTE_VELOCITY } from "./protocol.js";
 import { getVoice, VOICES } from "./synth.js";
 import { CELL_TICKS, foldMidi, mapTicksFor, POLY_STACK_CAP, KEY_OFFSET_CAP, DEFAULT_MAP_BARS, MAP_BAR_OPTIONS, MAP_MAX_COLS } from "./notes.js";
+import { SEQ_DEFAULT_RES, SEQ_DEFAULT_BARS, SEQ_MAX_STEPS, SEQ_RESOLUTIONS, SEQ_EXTENTS, DRUM_LANES, seqCellTicks, seqActiveCols, quantizeBlockCols, resnapCells } from "./seq.js";
 
 const PPQ = 480; // §5 ticks per quarter
 const tpsFor = (bpm) => (bpm * PPQ) / 60; // ticks/sec = 960 at 120 BPM
@@ -67,6 +68,24 @@ export class Ensemble {
     this.cells = this._makeCells();
     this.mapOffset = 0;
     this.melodySource = "none"; // 'merkle' | 'none' (empty-column resolution)
+    // ── drum sequencer (v1.4; render-time ribbons — §7.4 patterns are QUANTIZED
+    // for display/playback here, never re-derived; raw block mode is the default,
+    // so a fresh session behaves exactly like before) ──
+    // Per drum lane: mode 'rhythm' (raw merkle onsets, status quo) | 'seq'
+    // (ribbon: quantized block ∪ cells-on − cells-rest). Cells are tri-state
+    // (0 inherit / 1 on / 2 rest) over the FIXED 256-col store; res×bars picks
+    // the looping window. Lanes sound standalone (no block needed) in seq mode.
+    this.seq = {
+      res: SEQ_DEFAULT_RES,      // steps/bar: 1 whole · 2 half · 4 quarter · 8 eighth · 16 sixteenth
+      bars: SEQ_DEFAULT_BARS,    // looping extent, map-style
+      cells: {},                 // voiceId -> Array(256) of 0/1/2 (manual edits)
+      modes: {},                 // voiceId -> 'rhythm' | 'seq'
+      cursors: null,             // per-lane {rep, col} while playing
+    };
+    for (const id of DRUM_LANES) {
+      this.seq.cells[id] = new Array(SEQ_MAX_STEPS).fill(0);
+      this.seq.modes[id] = "rhythm";
+    }
   }
 
   _makeCells() {
@@ -197,6 +216,88 @@ export class Ensemble {
     this.melodySource = s === "merkle" ? "merkle" : "none";
     this.emit();
   }
+
+  // ── drum sequencer (player-side) ──
+  get seqActiveCols() { return seqActiveCols(this.seq.res, this.seq.bars); }
+  get seqCell() { return seqCellTicks(this.seq.res); }
+  get seqLoopTicks() { return this.seq.bars * BAR_TICKS; }
+
+  // resolution/extent changes RE-SNAP manual cells (position-in-ticks preserved,
+  // nearest new cell wins) and re-phase live cursors — the grid morphs under
+  // the player's finger, the loop keeps rolling (on-the-fly, per owner ask)
+  setSeqRes(steps) {
+    if (!SEQ_RESOLUTIONS.includes(steps) || steps === this.seq.res) return;
+    const old = this.seq.res;
+    this.seq.res = steps;
+    for (const id of DRUM_LANES) this.seq.cells[id] = resnapCells(this.seq.cells[id], old, steps);
+    this._rephaseSeqCursors(old, this.seq.bars);
+    this.emit();
+  }
+  setSeqBars(bars) {
+    if (!SEQ_EXTENTS.includes(bars) || bars === this.seq.bars) return;
+    const oldBars = this.seq.bars;
+    this.seq.bars = bars;
+    this._rephaseSeqCursors(this.seq.res, oldBars);
+    this.emit();
+  }
+  seqToggleMode(voiceId) {
+    if (!(voiceId in this.seq.modes)) return;
+    this.seq.modes[voiceId] = this.seq.modes[voiceId] === "seq" ? "rhythm" : "seq";
+    this.emit();
+  }
+  seqPaint(voiceId, col, val) {          // val 0|1|2; outside the extent: no-op
+    const c = this.seq.cells[voiceId];
+    if (!c || col < 0 || col >= this.seqActiveCols) return;
+    c[col] = val === 1 || val === 2 ? val : 0;
+  }
+  seqCycle(voiceId, col) {               // tap: inherit → on → rest → inherit
+    const c = this.seq.cells[voiceId];
+    if (!c || col < 0 || col >= this.seqActiveCols) return 0;
+    const v = (c[col] + 1) % 3;
+    c[col] = v;
+    return v;
+  }
+  // quantized column SET of a lane's block (for rendering + playback)
+  seqQuantCols(voiceId) {
+    const slot = this.slots.find((s) => s.voiceId === voiceId);
+    if (!slot || !slot.block) return null;
+    return quantizeBlockCols(slot.block.pattern.onsets,
+      { loopTicks: slot.block.pattern.loopTicks, res: this.seq.res, bars: this.seq.bars });
+  }
+  setSeqState(st) {                       // session restore: defaults first, then apply
+    this.seq.res = SEQ_DEFAULT_RES;
+    this.seq.bars = SEQ_DEFAULT_BARS;
+    for (const id of DRUM_LANES) {
+      this.seq.cells[id] = new Array(SEQ_MAX_STEPS).fill(0);
+      this.seq.modes[id] = "rhythm";
+    }
+    if (st) {
+      if (SEQ_RESOLUTIONS.includes(st.res)) this.seq.res = st.res;
+      if (SEQ_EXTENTS.includes(st.bars)) this.seq.bars = st.bars;
+      for (const id of DRUM_LANES) {
+        if (Array.isArray(st.cells && st.cells[id])) {
+          const arr = new Array(SEQ_MAX_STEPS).fill(0);
+          st.cells[id].slice(0, SEQ_MAX_STEPS).forEach((v, i) => { arr[i] = (v === 1 || v === 2) ? v : 0; });
+          this.seq.cells[id] = arr;
+        }
+        if (st.modes && st.modes[id]) this.seq.modes[id] = st.modes[id] === "seq" ? "seq" : "rhythm";
+      }
+    }
+    this.emit();
+  }
+  _rephaseSeqCursors(oldRes, oldBars) {
+    if (!this.playing || !this.seq.cursors) return;
+    const oldLoop = oldBars * BAR_TICKS;
+    const oldCell = seqCellTicks(oldRes);
+    const loop = this.seqLoopTicks, cell = this.seqCell, active = this.seqActiveCols;
+    for (const id of DRUM_LANES) {
+      const c = this.seq.cursors[id];
+      if (!c) continue;
+      const abs = c.rep * oldLoop + c.col * oldCell;
+      c.rep = Math.max(0, Math.floor(abs / loop));
+      c.col = Math.max(0, Math.min(active - 1, Math.round((abs - c.rep * loop) / cell)));
+    }
+  }
   // resolve a melodic onset's pitch STACK: painted column (capoed) → source-merkle
   // melody of this event → voice default; per-slot transpose folds each last
   _pitchStackFor(absTick, part, evIdx, voice, slot) {
@@ -299,6 +400,9 @@ export class Ensemble {
     for (const s of this.slots) {
       s.part = s.block ? this._buildPart(s.block, false) : null;
     }
+    // seq cursors: master-grid clocks per lane, aligned to transport tick 0
+    this.seq.cursors = {};
+    for (const id of DRUM_LANES) this.seq.cursors[id] = { rep: 0, col: 0 };
     this.playing = true;
     this.timer = setInterval(() => this._schedule(), SCHED_INTERVAL_MS);
     this.emit();
@@ -319,6 +423,7 @@ export class Ensemble {
     this.bus = null; this._comp = null; this._wet = null;
     this.playing = false;
     this._segments = null; this._pending = null; // discard uncommitted tempo
+    this.seq.cursors = null;
     for (const s of this.slots) s.part = null;
     this.emit();
   }
@@ -335,6 +440,10 @@ export class Ensemble {
       p.anchor = 0;
       p.entry = b;
       p.cursor = { rep: Math.max(0, Math.floor(b / p.loop)), idx: 0 };
+    }
+    // ribbons live on the master grid — re-align means back to column 0 too
+    if (this.seq.cursors) {
+      for (const id of DRUM_LANES) this.seq.cursors[id] = { rep: 0, col: 0 };
     }
     this.emit();
   }
@@ -363,9 +472,14 @@ export class Ensemble {
     }
 
     for (const s of this.slots) {
-      const p = s.part;
-      if (!p || s.muted) continue; // cursor freeze-through; catches up on unmute
+      if (s.muted) continue; // cursor freeze-through; catches up on unmute
       const voice = getVoice(s.voiceId);
+      if (!voice.melodic && this.seq.modes[s.voiceId] === "seq") {
+        this._scheduleSeq(s, voice, ctx, now, cur, horizon);
+        continue;
+      }
+      const p = s.part;
+      if (!p) continue;
       for (;;) {
         const evIdx = p.cursor.idx;
         const o = p.onsets[evIdx];
@@ -384,6 +498,28 @@ export class Ensemble {
         }
         if (++p.cursor.idx >= p.onsets.length) { p.cursor.idx = 0; p.cursor.rep++; }
       }
+    }
+  }
+
+  // ribbon clock: per-lane {rep, col} over the shared master grid
+  // (res×cols looping at bars*1920 ticks, synced across all lanes by design)
+  _scheduleSeq(slot, voice, ctx, now, cur, horizon) {
+    const c = this.seq.cursors && this.seq.cursors[voice.id];
+    if (!c) return;
+    const cell = this.seqCell, active = this.seqActiveCols, loop = this.seqLoopTicks;
+    const cells = this.seq.cells[voice.id];
+    const quant = this.seqQuantCols(voice.id); // Set of cols | null (no block)
+    for (;;) {
+      const abs = c.rep * loop + c.col * cell;
+      if (abs >= horizon) break;
+      if (abs >= cur - 2) { // stale guard mirrors the part loop
+        const m = cells[c.col];
+        if (m === 1 || (m === 0 && quant && quant.has(c.col))) {
+          const at = Math.max(this._timeAt(abs), now + 0.004);
+          voice.trigger(ctx, this.bus, at, cell / this._tpsBase, NOTE_VELOCITY, 0);
+        }
+      }
+      if (++c.col >= active) { c.col = 0; c.rep++; }
     }
   }
 }

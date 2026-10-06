@@ -8,5 +8,8 @@
 // whole-mix reverb knob — all render-time, all localStorage, session URL
 // semantics unchanged;
 // 1.3.1 = tone panel is an instrument popup (≥2 card widths, ~70vw) instead of
-// inline-folded (button overflow); actions row wraps.
-export const APP_VERSION = "1.3.1";
+// inline-folded (button overflow); actions row wraps;
+// 1.4.0 = drum sequencer — quantized block ribbons per drum lane (raw ▸ seq,
+// tri-state steps, live whole→16th grid, map-style extents), session-carried
+// (&e &j &i &d). Derivation untouched; "raw" lanes default = prior behavior.
+export const APP_VERSION = "1.4.0";

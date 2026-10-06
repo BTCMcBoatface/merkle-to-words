@@ -4,6 +4,7 @@
 //
 //   ?v=1&b=<height>~<root64>,...&s=<blockIdx|->(x7)&m=ind|master
 //          [&t=..][&u=..][&p=<b64 map cells>][&q=<1|2|4|8|16>][&o=p][&h=<±capo>][&g=m]
+//          [&e=<seq steps/bar 1|2|4|8|16>][&j=<seq bars>][&i=<rrrr.. lane modes r|s>][&d=<b64 seq cells>]
 //
 // Blocks with unknown height (manual roots) use height "-".
 // &p = base64url of count-prefixed column stacks over the 128-col store
@@ -13,6 +14,7 @@
 // Legacy v1 payloads (64 one-byte columns, no &q) decode as mono over 8 bars.
 
 import { encodeCells, decodeCells, decodeLegacyCells, MAP_MAX_COLS } from "./notes.js";
+import { encodeLanes, decodeLanes, lanesHaveEdits, DRUM_LANES, SEQ_RESOLUTIONS, SEQ_EXTENTS, SEQ_DEFAULT_RES, SEQ_DEFAULT_BARS } from "./seq.js";
 
 const LS_KEY = "m2m-rhyth…n-v1";
 const V = "1";
@@ -30,7 +32,7 @@ function b64uDecode(str) {
   return out;
 }
 
-export function encode({ blocks, slots, mode, transpose, bpm, cells, mapBars, polyphony, mapOffset, source }) {
+export function encode({ blocks, slots, mode, transpose, bpm, cells, mapBars, polyphony, mapOffset, source, seq }) {
   const b = blocks.map((k) => `${k.height ?? "-"}~${k.rootHex}`).join(",");
   const s = slots.map((i) => (i == null || i < 0 ? "-" : i)).join(",");
   const m = mode === "master" ? "master" : "ind";
@@ -45,6 +47,14 @@ export function encode({ blocks, slots, mode, transpose, bpm, cells, mapBars, po
     if (mapOffset) q += `&h=${mapOffset}`;
   }
   if (source === "merkle") q += `&g=m`;
+  // drum sequencer (v1.4): only non-default bits travel
+  if (seq && seq.cells && seq.modes) {
+    if (seq.res && seq.res !== SEQ_DEFAULT_RES && SEQ_RESOLUTIONS.includes(seq.res)) q += `&e=${seq.res}`;
+    if (seq.bars && seq.bars !== SEQ_DEFAULT_BARS && SEQ_EXTENTS.includes(seq.bars)) q += `&j=${seq.bars}`;
+    const mstr = DRUM_LANES.map((id) => (seq.modes[id] === "seq" ? "s" : "r")).join("");
+    if (mstr.includes("s")) q += `&i=${mstr}`;
+    if (lanesHaveEdits(seq.cells)) q += `&d=${b64uEncode(encodeLanes(seq.cells))}`;
+  }
   return q;
 }
 
@@ -103,6 +113,24 @@ export function decode(search) {
       }
     }
     if (q.get("g") === "m") view.source = "merkle";
+    const e = parseInt(q.get("e") || "0", 10);
+    const jb = parseInt(q.get("j") || "0", 10);
+    const im = q.get("i");
+    const dd = q.get("d");
+    if (SEQ_RESOLUTIONS.includes(e) || SEQ_EXTENTS.includes(jb) || im || dd) {
+      const seq = { res: SEQ_DEFAULT_RES, bars: SEQ_DEFAULT_BARS, modes: {}, cells: {} };
+      if (SEQ_RESOLUTIONS.includes(e)) seq.res = e;
+      if (SEQ_EXTENTS.includes(jb)) seq.bars = jb;
+      if (im && im.length === 4 && /^[rs]{4}$/.test(im)) {
+        DRUM_LANES.forEach((id, k) => { seq.modes[id] = im[k] === "s" ? "seq" : "rhythm"; });
+      }
+      if (dd) {
+        const cells = decodeLanes(b64uDecode(dd));
+        if (!cells) return null; // malformed seq payload → fresh-session flow
+        for (const id of DRUM_LANES) seq.cells[id] = cells[id];
+      }
+      view.seq = seq;
+    }
     return view;
   } catch (e) {
     return null; // malformed → fresh-session flow
