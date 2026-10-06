@@ -409,10 +409,13 @@ $("#snapSave").addEventListener("click", () => {
 });
 
 // ── tone panels (edit-sound; render-time dials per melodic voice) ──
-// Panel state writes straight into synth.js's live params (effect on the next
-// triggered note) + tonebank.js localStorage. Deliberately NO session persist
-// and NO full render() on slider input — dragging a slider must not rebuild
-// the DOM under the finger. The panel is hidden until "sound" is tapped.
+// The panel opens as an instrument POPUP anchored under the slot card —
+// ~70% of the app width, at least 2 card widths so drawbars have slide room,
+// capped at 620px — because the narrow grid column cannot host the organ's
+// 8 dials + favorites legibly. Panel state writes straight into
+// synth.js's live params (effect on the next triggered note) + tonebank.js
+// localStorage. Deliberately NO session persist and NO full render() on slider
+// input — dragging a slider must not rebuild the DOM under the finger.
 function persistTone(voiceId) {
   bank.tone[voiceId] = { ...toneFor(voiceId) };
   tonebank.save(bank);
@@ -423,11 +426,32 @@ function fmt(d, v) {
   return String(Math.round(v * 100) / 100);
 }
 
+// center the popup under its slot, clamped inside the viewport
+function positionTonePopup(slotEl, panel) {
+  const r = slotEl.getBoundingClientRect();
+  const vw = document.documentElement.clientWidth;
+  const pw = panel.offsetWidth || Math.min(Math.max(vw * 0.7, 310), vw - 16, 620);
+  let gLeft = r.left + (r.width - pw) / 2;
+  gLeft = Math.max(8, Math.min(gLeft, vw - pw - 8));
+  panel.style.left = (gLeft - r.left) + "px";
+}
+
 function buildTonePanel(voiceId) {
   const p = toneFor(voiceId);
   const wrap = document.createElement("div");
   wrap.className = "tone";
   wrap.addEventListener("click", (e) => e.stopPropagation());
+
+  const head = document.createElement("div");
+  head.className = "thead";
+  const ttl = document.createElement("span");
+  ttl.textContent = `${getVoice(voiceId).label} · sound`;
+  const x = document.createElement("button");
+  x.textContent = "✕"; x.title = "close (or Esc)";
+  x.addEventListener("click", () => { openTone = null; render(); });
+  head.appendChild(ttl); head.appendChild(x);
+  wrap.appendChild(head);
+
   for (const d of TONE_SCHEMA[voiceId]) {
     const row = document.createElement("div");
     if (d.type === "enum") {
@@ -516,6 +540,7 @@ function buildTonePanel(voiceId) {
 function render() {
   // drop dangling selection (e.g., a selected block was just evicted by live mode)
   if (selected && selected.kind === "block" && !blocks[selected.idx]) selected = null;
+  let pendingTonePos = null; // popup must be measured once its slot is in the DOM
   slotsEl.textContent = "";
   engine.slots.forEach((s, i) => {
     const voice = getVoice(s.voiceId);
@@ -588,7 +613,11 @@ function render() {
       tv.textContent = s.transpose ? `T${s.transpose > 0 ? "+" : ""}${s.transpose}` : "";
       tRow.appendChild(tv);
       el.appendChild(tRow);
-      if (TONE_SCHEMA[s.voiceId] && openTone === i) el.appendChild(buildTonePanel(s.voiceId));
+      if (TONE_SCHEMA[s.voiceId] && openTone === i) {
+        const tp = buildTonePanel(s.voiceId);
+        el.appendChild(tp);
+        pendingTonePos = { slotEl: el, panel: tp };
+      }
     }
 
     el.addEventListener("click", () => {
@@ -625,6 +654,7 @@ function render() {
     }
     slotsEl.appendChild(el);
   });
+  if (pendingTonePos) positionTonePopup(pendingTonePos.slotEl, pendingTonePos.panel);
 
   // shelf
   shelfEl.textContent = "";
@@ -772,6 +802,9 @@ $("#resyncBtn").addEventListener("click", () => {
   engine.resyncAllToTop();
   setStatus("re-aligned: all parts back to tick 0");
 });
+window.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && openTone !== null) { openTone = null; render(); }
+});
 $("#copyBtn").addEventListener("click", async () => {
   const url = session.shareURL(view());
   try { await navigator.clipboard.writeText(url); setStatus("session link copied"); }
@@ -868,7 +901,7 @@ async function bootFresh() {
   const st = session.load();
   if (st) await applySessionAsync(st); else await bootFresh();
   wireMapCanvas();
-  window.addEventListener("resize", () => drawMap());
+  window.addEventListener("resize", () => { drawMap(); if (openTone !== null) render(); });
   render();
   window.__m2m = {
     engine, derivePattern, deriveMelody, blocks: () => blocks,

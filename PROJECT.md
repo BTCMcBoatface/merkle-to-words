@@ -28,7 +28,7 @@ Three pillars:
 | Protocols | Rhythm `M2M-RHYTHM/1.0.2` **frozen** (1.0.1/1.0.2 editorial; derivation unchanged since 1.0.0). Pitched `M2M-NOTES/2.1.0` **frozen Oct 1** — 2.0.0 piano-roll MAJOR (own-length looping map, mono + ≤7 chords, drag brush) then 2.1.0 MINOR/PATCH: 1/2-bar extents over a fixed 128-col store (non-destructive shrink/grow), map capo, ♯-fold view; eighth cell corrected to 240 ticks (frozen text's "600" was a typo). Fixtures in `tests/`. |
 | Python reference | **Conforms** — §7.4 cyclic reuse + exact-fill stop, both scripts; disjoint bits 11–18 pitch fix (OP1); validated over 240 synthetic roots. |
 | JS derivation + SMF writers | **Conforms** — `node tests/verify.mjs` PASS 98/98 (rhythm + NOTES: melody32, scale params, pitchBytes, mapped-SMF bytes); canonical downloads byte-identical to mido. |
-| Player features shipped | **app v1.3.0** (versioned via `docs/js/version.js`, header + snapshots): **sound layer — per-voice tone panels (lead: wave/filter-open/close/resonance/attack/length/release/level; bass: wave/cutoff/resonance/attack/length/level; organ: 4 drawbars/attack/length/release/level), named favorites (cap 8/voice) + current settings + whole-mix reverb knob — all localStorage via `tonebank.js`, never session URL/snapshots/files**; blocks-on-request (tip/height, shelf-by-default), 7 slots + shelf (max 8), drag & tap-move, **assign dropdown per block (evict-to-shelf)**, mute, independent/master loop modes, ⟲ re-align, session URL+localStorage mirror, per-block `.mid` download, transpose ±1/±12 (melodic only), BPM box 20–300 (boundary commit), LIVE mode (60 s poll, evict-oldest, arrival-driven rotation), snapshots (cap 20), melody map piano roll (drag-paint, **1/2/4/8/16-bar extents over fixed 128-col store**, mono/chords ≤7, **map capo ±1**, **♯-fold view with hidden-sharp markers**, merkle-fill, mapped export ⤓), **two-click CLEAR** |
+| Player features shipped | **app v1.3.1** (versioned via `docs/js/version.js`, header + snapshots): **sound layer — per-voice tone panels as instrument POPUPS (≥2 card widths / ~70vw; lead: wave/filter-open/close/resonance/attack/length/release/level; bass: wave/cutoff/resonance/attack/length/level; organ: 4 drawbars/attack/length/release/level), named favorites (cap 8/voice) + current settings + whole-mix reverb knob — all localStorage via `tonebank.js`, never session URL/snapshots/files**; blocks-on-request (tip/height, shelf-by-default), 7 slots + shelf (max 8), drag & tap-move, **assign dropdown per block (evict-to-shelf)**, mute, independent/master loop modes, ⟲ re-align, session URL+localStorage mirror, per-block `.mid` download, transpose ±1/±12 (melodic only), BPM box 20–300 (boundary commit), LIVE mode (60 s poll, evict-oldest, arrival-driven rotation), snapshots (cap 20), melody map piano roll (drag-paint, **1/2/4/8/16-bar extents over fixed 128-col store**, mono/chords ≤7, **map capo ±1**, **♯-fold view with hidden-sharp markers**, merkle-fill, mapped export ⤓), **two-click CLEAR** |
 | Needs eyes/ears | Human browser pass never done — phone (iOS audio unlock, tap-to-move, live/paint ergonomics) + desktop |
 | Pages deploy | Repo public; serve from `main` → `/docs` |
 | `midi-files/`, `notes-midi/` archives | Pre-patch patterns; regeneration **deliberately deferred** |
@@ -93,7 +93,7 @@ Three pillars:
 | Map extent model, not resize-reslice (Oct 1) | Fixed 128-col (16-bar) store; the length selector chooses the LOOPING window (1/2/4/8/16, baseline 4). ÷2/×2 non-destructive (tail hides, returns) — also future-proofs per-instrument maps whose lengths differ |
 | Capo = map-level, sounding-only (Oct 1) | Owner chose map-wide ±1 over per-note/view-offset: painted data immutable, applied at schedule + painted-export, fallbacks never capoed, clamped ±11. ♯-fold is a view filter (hidden sharps = notch markers), never serialized |
 | Eighth-cell arithmetic: 240, not 600 (Oct 1) | The frozen 2.0.0 text's "600 ticks" contradicted its own math (15360/64 = 240); shipped code inherited it — back third of every map was unreachable. Found via real-eighth-timing test. Lesson: property tests must use MUSIC times, not code arithmetic. Spec PATCH-corrected |
-| App versioning convention (Oct 1) | `docs/js/version.js` single source, shown in header tag, stamped into snapshots. 1.0.0 = first ensemble build (retroactive); 1.1.0 = live/snapshots/piano-roll/shelf/dropdown/clear; 1.2.0 = capo/fold/1-2-bar extents; 1.3.0 = voice tone panels + favorites + global reverb. MAJOR breaks session/export semantics, MINOR adds features, PATCH fixes |
+| App versioning convention (Oct 1) | `docs/js/version.js` single source, shown in header tag, stamped into snapshots. 1.0.0 = first ensemble build (retroactive); 1.1.0 = live/snapshots/piano-roll/shelf/dropdown/clear; 1.2.0 = capo/fold/1-2-bar extents; 1.3.0 = voice tone panels + favorites + global reverb; 1.3.1 = tone panel as instrument popup (≥2 cards) + wrapping actions row (PATCH — layout fix, no semantics change). MAJOR breaks session/export semantics, MINOR adds features, PATCH fixes |
 | Tone = expose what the synth already contains (Oct 5, BUILT v1.3.0) | Owner scope: lead/bass/organ dials only, "only what is built in, already there, and modifiable" — waveform (4 built-in osc types), filter cutoff/Q, envelope times, organ drawbars, level; no new signal sources, no LFO effects, drums untouched. TONE_DEFAULTS are the original hard-coded constants: a fresh session sounds exactly like pre-1.3.0 |
 | Sound settings are LOCAL-only (Oct 5) | Owner: persistence "based on a user's local browser storage" — current tones + favorites bank (cap 8/voice, reload one at a time) + reverb live in `tonebank.js` localStorage (`m2m-tones-v1`), NOT the session URL and not snapshots; share links stay arrangement-only, downloads stay canonical (§11 render-time rule holds) |
 | Reverb = ONE whole-mix knob (Oct 5) | Owner ruling: not per-instrument. Post-compressor send over a synthesized decaying-noise IR (no audio asset, no dependency); drums included; live-adjustable while playing |
@@ -110,8 +110,8 @@ Three pillars:
       sound right over the drums.**
 - [x] Commit current build (live mode + snapshots + melody map + NOTES freeze +
       version bumps) — `0ed82ba` pushed Oct 1.
-- [ ] Confirm live Pages URL serves the v1.3.0 build (hard-refresh past cache;
-      header tag should read `player v1.3.0`).
+- [ ] Confirm live Pages URL serves the v1.3.1 build (hard-refresh past cache;
+      header tag should read `player v1.3.1`).
 - [ ] One real public session link shared as the canonical smoke target.
 
 ### Shipped (Oct 1) — awaiting only the browser pass above
@@ -156,8 +156,10 @@ Three pillars:
       `t mod mapTicks` looping; next step is a `maps[]` registry + slot→mapId
       assignment (single global map stays the default degenerate case). Do NOT
       hardcode the one-map assumption into new features.
-- [x] **Voice tone panels + favorites + reverb (BUILT v1.3.0, Oct 5)** — "sound" button per
+- [x] **Voice tone panels + favorites + reverb (BUILT v1.3.0, Oct 5; popup layout v1.3.1)** — "sound" button per
       melodic slot opens hidden dials (lead 8 params, bass 6, organ 4 drawbars + timing/level);
+      panel = instrument popup anchored under the slot (≥2 card widths / ~70vw, capped 620px, ✕/Esc closes,
+      actions row wraps — buttons never fall off the card);
       named favorites per voice (cap 8, reload one at a time), current tone + reverb persist in
       localStorage (`tonebank.js`, `m2m-tones-v1`) — never in session URL/snapshots/files.
       Whole-mix reverb = one transport knob over a synthesized IR (post-compressor send,

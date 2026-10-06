@@ -39,7 +39,7 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: var
 .slot.over { border-color: var(--accent); background: var(--card2); }
 .slot.selected-slot { border-color: var(--accent2); }
 .slot.muted { opacity: 0.45; }
-.slot .actions { margin-top: auto; display: flex; gap: 6px; }
+.slot .actions { margin-top: auto; display: flex; gap: 6px; flex-wrap: wrap; }
 .slot .actions button {
   background: none; border: 1px solid var(--line); color: var(--dim);
   border-radius: 8px; padding: 3px 8px; font-size: 11px; cursor: pointer;
@@ -77,7 +77,7 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: var
 
 /* transport */
 #transport {
-  position: fixed; inset-inline: 0; bottom: 0;
+  position: fixed; inset-inline: 0; bottom: 0; z-index: 40;
   background: rgba(13, 15, 20, 0.92); backdrop-filter: blur(10px);
   border-top: 1px solid var(--line);
   padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
@@ -157,11 +157,27 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: var
 #snapList .snap .restore { color: var(--accent); }
 #snapList .snap .del { color: var(--danger); }
 
-/* tone panels (edit-sound dials — render-time sound layer) */
+/* tone panels (edit-sound dials — instrument popup over the grid, ~70% width) */
 .slot .tone {
-  border-top: 1px dashed var(--line); margin-top: 6px; padding-top: 8px;
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 25;
+  /* min 2 slot-card widths (2 x 150px + gap) so the drawbars have slide room;
+     70% of the app width is the target, 620px caps the desktop sprawl */
+  width: clamp(310px, 70vw, 620px); max-width: calc(100vw - 16px);
+  max-height: 68vh; overflow-y: auto;
+  background: var(--card2); border: 1.5px solid var(--accent); border-radius: var(--radius);
+  padding: 10px 12px 12px; box-shadow: 0 14px 34px rgba(0, 0, 0, 0.6);
   display: flex; flex-direction: column; gap: 6px; cursor: default;
 }
+.slot .tone .thead { display: flex; align-items: center; gap: 8px; margin-bottom: 2px; }
+.slot .tone .thead span {
+  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 12px; font-weight: 700; color: var(--accent); letter-spacing: 0.4px; text-transform: uppercase;
+}
+.slot .tone .thead button {
+  background: none; border: 1px solid var(--line); color: var(--dim);
+  border-radius: 8px; padding: 2px 8px; font-size: 12px; cursor: pointer;
+}
+.slot .tone .thead button:hover { color: var(--danger); border-color: var(--danger); }
 .slot .tone .frow { display: flex; align-items: center; gap: 6px; font-size: 10px; color: var(--dim); }
 .slot .tone .frow label { width: 62px; flex: none; }
 .slot .tone .frow output { min-width: 34px; text-align: right; font-size: 10px; color: var(--accent); font-variant-numeric: tabular-nums; }
