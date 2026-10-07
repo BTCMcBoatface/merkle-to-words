@@ -605,16 +605,16 @@ export class Ensemble {
         if (abs >= p.entry && abs >= cur - 2) {
           const at = Math.max(this._timeAt(abs), now + 0.004);
           const dur = o.soundingTicks / this._tpsBase;
+          // v1.5/v1.7: modulation context whenever the voice has ∿ mods
+          // (melodic AND drums) — {tick: master tick at onset, oscFor: shared LFO}
+          const md = hasMods(voice.id)
+            ? { tick: abs, oscFor: (r) => this._lfo(r) }
+            : undefined;
           if (voice.melodic) {
-            // v1.5: modulation context only when the voice actually has ∿ mods —
-            // {tick: master tick at onset, oscFor: shared transport-locked LFO}
-            const md = hasMods(voice.id)
-              ? { tick: abs, oscFor: (r) => this._lfo(r) }
-              : undefined;
             for (const midi of this._pitchStackFor(abs, p, evIdx, voice, s))
               voice.trigger(ctx, this.bus, at, dur, NOTE_VELOCITY, midi, md);
           } else {
-            voice.trigger(ctx, this.bus, at, dur, NOTE_VELOCITY, 0);
+            voice.trigger(ctx, this.bus, at, dur, NOTE_VELOCITY, 0, md);
           }
         }
         if (++p.cursor.idx >= p.onsets.length) { p.cursor.idx = 0; p.cursor.rep++; }
@@ -639,7 +639,10 @@ export class Ensemble {
         const nextT = c.idx + 1 < tl.length ? tl[c.idx + 1] : loop + tl[0];
         const gap = Math.max(SEQ_UNIT, nextT - tl[c.idx]);
         const dur = Math.min(240, gap) / this._tpsBase;
-        voice.trigger(ctx, this.bus, at, dur, NOTE_VELOCITY, 0);
+        const md = hasMods(voice.id)
+          ? { tick: abs, oscFor: (r) => this._lfo(r) }
+          : undefined;
+        voice.trigger(ctx, this.bus, at, dur, NOTE_VELOCITY, 0, md);
       }
       if (++c.idx >= tl.length) { c.idx = 0; c.rep++; }
     }

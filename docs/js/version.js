@@ -28,5 +28,12 @@
 // drums Ch13·Keys ⇄ Ch1–4·Split GM keys), no program changes, type 0/1 toggle,
 // audible BPM meta, session params &e &w &j &k &i &f (legacy &d still decodes).
 // BMP-glyph rule: no astral-plane chars in UI (the old wide-font duration glyphs
-// rendered as tofu → replaced everywhere by 1 · ½ · ♩ · ♪ · ♬).
-export const APP_VERSION = "1.6.0";
+// rendered as tofu → replaced everywhere by 1 · ½ · ♩ · ♪ · ♬);
+// 1.7.0 = drum tone dials (owner scope revision: every practical constant, incl.
+// waveforms — kick body wave/start/end/drop/length/click-bright/click-lvl/level;
+// snare body tone/Q/decay/level + snap wave/pitch/decay/level; hats wave/tune/
+// brightness/decay/level per hat). Sound button + popup + reset + favorites light
+// up automatically (schema-driven); ∿ modulation wired on drum paths too (per-hit
+// scalar sampling); persistence stays tonebank-local (never URL). Defaults = the
+// old hard-coded constants, so fresh sessions sound exactly like pre-1.7.0.
+export const APP_VERSION = "1.7.0";

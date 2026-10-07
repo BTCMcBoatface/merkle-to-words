@@ -38,12 +38,11 @@ function startOsc(ctx, type, freq, time, stopAt) {
 
 // ── Tone parameters (player-side, §11 render-time only) ─────────────────────
 // Every default below is the ORIGINAL hard-coded constant of that voice — a
-// fresh session sounds exactly like pre-1.3.0 builds. TONE_SCHEMA describes the
-// dials the UI draws; the trigger functions read the live params at schedule
-// time. Only what the synth already contains is exposed (waveform among the
-// four built-in oscillator types, filter cutoff/Q, envelope times, organ
-// drawbar levels, output level). Tempo-synced ∿ modulation lives on top of
-// these (below) — still 100% Web Audio built-ins: sine osc + gain + param sum.
+// fresh session sounds exactly like pre-1.3.0 builds (drums exactly like
+// pre-1.7.0). TONE_SCHEMA describes the dials the UI draws; the trigger
+// functions read the live params at schedule time. Only what the synth already
+// contains is exposed (waveform among the four built-in oscillator types,
+// filter cutoff/Q, envelope times, organ drawbar levels, output level).
 // Downloads stay canonical (MIDI-PROTOCOL.md §5/§11): this lives in the air,
 // not in the derived event stream.
 
@@ -78,6 +77,45 @@ const BAR_TICKS_S = 1920; // 480 PPQ × 4 — local mirror of protocol BAR_TICKS
 export const lfoCycleTicks = (rateSteps) => BAR_TICKS_S / rateSteps;
 
 export const TONE_SCHEMA = {
+  // v1.7: drums are tunable too (owner: "expose all practical values, even if
+  // it becomes a new instrument"). modTarget "scalar" = sampled once per hit —
+  // one-shot voices take their character at onset (a ∿ on kick "end" makes
+  // every hit thump to a different pitch). Hat six-partial RATIOS stay fixed;
+  // "tune" (f0) is their musical equivalent.
+  "bass-drum": [
+    { key: "wave", label: "body wave", type: "enum", options: WAVES },
+    { key: "start", label: "body start", unit: "Hz", type: "f", min: 60, max: 400, step: 1, modTarget: "scalar" },
+    { key: "end", label: "body end", unit: "Hz", type: "f", min: 20, max: 200, step: 1, modTarget: "scalar" },
+    { key: "drop", label: "drop time", unit: "s", type: "f", min: 0.01, max: 0.2, step: 0.005, modTarget: "scalar" },
+    { key: "len", label: "length", unit: "s", type: "f", min: 0.1, max: 1.2, step: 0.01, modTarget: "scalar" },
+    { key: "clickHz", label: "click bright", unit: "Hz", type: "f", min: 500, max: 5000, step: 10, modTarget: "scalar" },
+    { key: "click", label: "click level", type: "f", min: 0, max: 1, step: 0.01, modTarget: "scalar" },
+    { key: "level", label: "level", type: "f", min: 0, max: 1, step: 0.01, modTarget: "scalar" },
+  ],
+  "snare": [
+    { key: "bodyHz", label: "body tone", unit: "Hz", type: "f", min: 400, max: 5000, step: 10, modTarget: "scalar" },
+    { key: "bodyQ", label: "body resonate", type: "f", min: 0.3, max: 8, step: 0.1, modTarget: "scalar" },
+    { key: "bodyDecay", label: "body decay", unit: "s", type: "f", min: 0.05, max: 0.6, step: 0.01, modTarget: "scalar" },
+    { key: "bodyLevel", label: "body level", type: "f", min: 0, max: 1, step: 0.01, modTarget: "scalar" },
+    { key: "snapWave", label: "snap wave", type: "enum", options: WAVES },
+    { key: "snapHz", label: "snap pitch", unit: "Hz", type: "f", min: 80, max: 400, step: 1, modTarget: "scalar" },
+    { key: "snapDecay", label: "snap decay", unit: "s", type: "f", min: 0.02, max: 0.4, step: 0.01, modTarget: "scalar" },
+    { key: "snapLevel", label: "snap level", type: "f", min: 0, max: 1, step: 0.01, modTarget: "scalar" },
+  ],
+  "hat-closed": [
+    { key: "wave", label: "metal wave", type: "enum", options: WAVES },
+    { key: "f0", label: "tune", unit: "Hz", type: "f", min: 20, max: 100, step: 1, modTarget: "scalar" },
+    { key: "hp", label: "brightness", unit: "Hz", type: "f", min: 3000, max: 12000, step: 50, modTarget: "scalar" },
+    { key: "decay", label: "decay", unit: "s", type: "f", min: 0.02, max: 1.0, step: 0.005, modTarget: "scalar" },
+    { key: "level", label: "level", type: "f", min: 0, max: 1, step: 0.01, modTarget: "scalar" },
+  ],
+  "hat-open": [
+    { key: "wave", label: "metal wave", type: "enum", options: WAVES },
+    { key: "f0", label: "tune", unit: "Hz", type: "f", min: 20, max: 100, step: 1, modTarget: "scalar" },
+    { key: "hp", label: "brightness", unit: "Hz", type: "f", min: 3000, max: 12000, step: 50, modTarget: "scalar" },
+    { key: "decay", label: "decay", unit: "s", type: "f", min: 0.02, max: 1.0, step: 0.005, modTarget: "scalar" },
+    { key: "level", label: "level", type: "f", min: 0, max: 1, step: 0.01, modTarget: "scalar" },
+  ],
   "lead-synth": [
     { key: "wave", label: "waveform", type: "enum", options: WAVES },
     { key: "cutoff", label: "filter open", unit: "Hz", type: "f", min: 200, max: 8000, step: 25, modTarget: "param" },
@@ -109,6 +147,11 @@ export const TONE_SCHEMA = {
 };
 
 export const TONE_DEFAULTS = {
+  // drum defaults == the pre-1.7.0 hard-coded constants (byte-for-behaviour)
+  "bass-drum": { wave: "sine", start: 155, end: 42, drop: 0.07, len: 0.8, clickHz: 1500, click: 0.35, level: 1 },
+  "snare": { bodyHz: 1800, bodyQ: 0.7, bodyDecay: 0.2, bodyLevel: 0.85, snapWave: "triangle", snapHz: 185, snapDecay: 0.1, snapLevel: 0.55 },
+  "hat-closed": { wave: "square", f0: 40, hp: 8000, decay: 0.055, level: 0.45 },
+  "hat-open": { wave: "square", f0: 40, hp: 6500, decay: 0.4, level: 0.35 },
   "lead-synth": { wave: "sawtooth", cutoff: 3000, cutoffEnd: 800, q: 6, attack: 0.01, gate: 0.55, release: 0.08, level: 0.5 },
   "bass-synth": { wave: "square", cutoff: 260, q: 2, attack: 0.004, gate: 0.7, level: 0.9 },
   "organ": { p1: 1, p2: 0.5, p3: 0.25, p4: 0.12, attack: 0.02, gate: 0.9, release: 0.12, level: 0.5 },
@@ -117,8 +160,9 @@ export const TONE_DEFAULTS = {
 const toneParams = {};
 for (const id of Object.keys(TONE_DEFAULTS)) toneParams[id] = { ...TONE_DEFAULTS[id] };
 
-// live params object for a melodic voice (drums have none — sound design there
-// is the frozen 808 flavor; per owner scope the dials cover lead/bass/organ)
+// live params object for a voice (drums gained their own dials in v1.7;
+// per v1.3 owner scope the original dials covered lead/bass/organ —
+// superseded by the v1.7 "expose what's practical" revision)
 export function toneFor(voiceId) {
   return toneParams[voiceId] || null;
 }
@@ -189,54 +233,76 @@ function attachModEdge(ctx, m, voiceId, key, param, endT) {
   setTimeout(() => { try { g.disconnect(); osc.disconnect(g); } catch (e) { /* gone */ } }, ms);
 }
 
-// ── Drum voices ──────────────────────────────────────────────────────────────
+// per-hit scalar sampler shared by all voices (melodic + drums): reads the
+// live tone param, or its ∿ value sampled at this hit's master tick
+function scaler(id, m) {
+  const p = toneFor(id);
+  const mods = m ? getMods(id) : null;
+  return (key) => {
+    const md = mods && mods[key];
+    return md ? modSample(SCHEMA_BY[id][key], md, m.tick) : p[key];
+  };
+}
 
-function triggerKick(ctx, dest, time, dur, vel) {
-  const v = vel / 127;
-  const len = Math.max(0.3, Math.min(dur * 1.4, 0.8));
+// ── Drum voices (v1.7: every drum dial is a former hard-coded constant) ────
+
+function triggerKick(ctx, dest, time, dur, vel, midi, m) {
+  const id = "bass-drum";
+  const p = toneFor(id);
+  const sc = scaler(id, m);
+  const v = (vel / 127) * sc("level");
+  const cap = sc("len");
+  // original floor semantics (0.3 s min) preserved, but a shorter dial wins
+  const len = Math.max(Math.min(dur * 1.4, cap), Math.min(0.3, cap));
   const osc = ctx.createOscillator();
-  osc.type = "sine";
-  osc.frequency.setValueAtTime(155, time);
-  osc.frequency.exponentialRampToValueAtTime(42, time + 0.07);
-  const g = envGain(ctx, dest, time, v * 1.0, len, 0.001);
+  osc.type = p.wave;
+  osc.frequency.setValueAtTime(sc("start"), time);
+  osc.frequency.exponentialRampToValueAtTime(Math.max(10, sc("end")), time + sc("drop"));
+  const g = envGain(ctx, dest, time, v, len, 0.001);
   osc.connect(g); osc.start(time); osc.stop(time + len + 0.05);
   // beater click
   const n = ctx.createBufferSource();
   n.buffer = noiseBuffer(ctx);
   const hp = ctx.createBiquadFilter();
-  hp.type = "highpass"; hp.frequency.value = 1500;
-  const cg = envGain(ctx, dest, time, v * 0.35, 0.02, 0.001);
+  hp.type = "highpass"; hp.frequency.value = sc("clickHz");
+  const cg = envGain(ctx, dest, time, (vel / 127) * sc("click"), 0.02, 0.001);
   n.connect(hp); hp.connect(cg);
   n.start(time, Math.random() * 0.5); n.stop(time + 0.03);
 }
 
-function triggerSnare(ctx, dest, time, dur, vel) {
-  const v = vel / 127;
+function triggerSnare(ctx, dest, time, dur, vel, midi, m) {
+  const id = "snare";
+  const p = toneFor(id);
+  const sc = scaler(id, m);
+  const bodyDecay = sc("bodyDecay");
   // noise body
   const n = ctx.createBufferSource();
   n.buffer = noiseBuffer(ctx);
   const bp = ctx.createBiquadFilter();
-  bp.type = "bandpass"; bp.frequency.value = 1800; bp.Q.value = 0.7;
-  const ng = envGain(ctx, dest, time, v * 0.85, 0.2, 0.001);
+  bp.type = "bandpass"; bp.frequency.value = sc("bodyHz"); bp.Q.value = sc("bodyQ");
+  const ng = envGain(ctx, dest, time, (vel / 127) * sc("bodyLevel"), bodyDecay, 0.001);
   n.connect(bp); bp.connect(ng);
-  n.start(time, Math.random() * 0.5); n.stop(time + 0.25);
+  n.start(time, Math.random() * 0.5); n.stop(time + bodyDecay + 0.05);
   // tonal snap
-  const o = startOsc(ctx, "triangle", 185, time, time + 0.12);
-  const og = envGain(ctx, dest, time, v * 0.55, 0.1, 0.001);
+  const o = startOsc(ctx, p.snapWave, sc("snapHz"), time, time + sc("snapDecay") + 0.02);
+  const og = envGain(ctx, dest, time, (vel / 127) * sc("snapLevel"), sc("snapDecay"), 0.001);
   o.connect(og);
 }
 
-function triggerHat(ctx, dest, time, dur, vel, open) {
-  const v = vel / 127;
-  const decay = open ? 0.4 : 0.055;
+function triggerHat(ctx, dest, time, dur, vel, open, m) {
+  const id = open ? "hat-open" : "hat-closed";
+  const p = toneFor(id);
+  const sc = scaler(id, m);
+  const decay = sc("decay");
   const hp = ctx.createBiquadFilter();
-  hp.type = "highpass"; hp.frequency.value = open ? 6500 : 8000;
-  const g = envGain(ctx, dest, time, v * (open ? 0.35 : 0.45), decay, 0.001);
+  hp.type = "highpass"; hp.frequency.value = sc("hp");
+  const g = envGain(ctx, dest, time, (vel / 127) * sc("level"), decay, 0.001);
   hp.connect(g);
-  // classic 808 metallic: six inharmonic square oscillators
-  const f0 = 40;
+  // classic 808 metallic: six inharmonic oscillators — RATIOS are the voice's
+  // identity (owner: stay fixed); "tune" (f0) + wave + brightness are the dials
+  const f0 = sc("f0");
   for (const ratio of [1, 2, 4.16, 5.43, 6.79, 8.21]) {
-    const o = startOsc(ctx, "square", f0 * ratio, time, time + decay + 0.05);
+    const o = startOsc(ctx, p.wave, f0 * ratio, time, time + decay + 0.05);
     o.connect(hp);
   }
 }
@@ -336,13 +402,13 @@ function triggerOrgan(ctx, dest, time, dur, vel, midi, m) {
 
 // ── Registry ─────────────────────────────────────────────────────────────────
 // Order = the seven ensemble slots (player plan). defaultNote applies to
-// melodic voices only until the transpose/chord overlay arrives.
-
+// melodic voices; drums take an optional 7th mod-ctx arg (v1.7) through their
+// wrappers.
 export const VOICES = [
-  { id: "bass-drum",  label: "Bass Drum",   melodic: false, defaultNote: 36, trigger: (c, d, t, du, v, m) => triggerKick(c, d, t, du, v) },
-  { id: "snare",      label: "Snare",       melodic: false, defaultNote: 38, trigger: (c, d, t, du, v, m) => triggerSnare(c, d, t, du, v) },
-  { id: "hat-closed", label: "Hi-Hat Closed", melodic: false, defaultNote: 42, trigger: (c, d, t, du, v, m) => triggerHat(c, d, t, du, v, false) },
-  { id: "hat-open",   label: "Hi-Hat Open", melodic: false, defaultNote: 46, trigger: (c, d, t, du, v, m) => triggerHat(c, d, t, du, v, true) },
+  { id: "bass-drum",  label: "Bass Drum",   melodic: false, defaultNote: 36, trigger: (c, d, t, du, v, mi, mod) => triggerKick(c, d, t, du, v, mi, mod) },
+  { id: "snare",      label: "Snare",       melodic: false, defaultNote: 38, trigger: (c, d, t, du, v, mi, mod) => triggerSnare(c, d, t, du, v, mi, mod) },
+  { id: "hat-closed", label: "Hi-Hat Closed", melodic: false, defaultNote: 42, trigger: (c, d, t, du, v, mi, mod) => triggerHat(c, d, t, du, v, false, mod) },
+  { id: "hat-open",   label: "Hi-Hat Open", melodic: false, defaultNote: 46, trigger: (c, d, t, du, v, mi, mod) => triggerHat(c, d, t, du, v, true, mod) },
   { id: "lead-synth", label: "Lead Synth",  melodic: true,  defaultNote: 72, trigger: triggerLead },
   { id: "bass-synth", label: "Bass Synth",  melodic: true,  defaultNote: 36, trigger: triggerBass },
   { id: "organ",      label: "Organ",       melodic: true,  defaultNote: 60, trigger: triggerOrgan },

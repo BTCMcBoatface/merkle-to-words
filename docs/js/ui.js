@@ -741,7 +741,7 @@ $("#snapSave").addEventListener("click", () => {
   render();
 });
 
-// ── tone panels (edit-sound; render-time dials per melodic voice) ──
+// ── tone panels (edit-sound; render-time dials per voice — drums since v1.7) ──
 // The panel opens as an instrument POPUP anchored under the slot card —
 // ~70% of the app width, at least 2 card widths so drawbars have slide room,
 // capped at 620px — because the narrow grid column cannot host the organ's
@@ -1004,11 +1004,12 @@ function render() {
       tv.textContent = s.transpose ? `T${s.transpose > 0 ? "+" : ""}${s.transpose}` : "";
       tRow.appendChild(tv);
       el.appendChild(tRow);
-      if (TONE_SCHEMA[s.voiceId] && openTone === i) {
-        const tp = buildTonePanel(s.voiceId);
-        el.appendChild(tp);
-        pendingTonePos = { slotEl: el, panel: tp };
-      }
+    }
+    // tone panel popup: ANY voice with a schema — drums included (v1.7)
+    if (TONE_SCHEMA[s.voiceId] && openTone === i) {
+      const tp = buildTonePanel(s.voiceId);
+      el.appendChild(tp);
+      pendingTonePos = { slotEl: el, panel: tp };
     }
 
     el.addEventListener("click", () => {
