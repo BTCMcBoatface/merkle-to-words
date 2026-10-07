@@ -51,13 +51,21 @@
     <section id="seqSection" aria-label="Drum sequencer">
       <h2>Drum sequencer <span class="draft">ribbons · quantize</span></h2>
       <div id="seqBar">
-        <span class="seg" id="seqResSeg">
-          <button data-res="1" class="btn mini">𝅝</button>
-          <button data-res="2" class="btn mini">𝅗𝅥</button>
-          <button data-res="4" class="btn mini">♩</button>
-          <button data-res="8" class="btn mini sel">♪</button>
-          <button data-res="16" class="btn mini">♬</button>
-          <span class="seglbl">grid</span>
+        <span class="seg" id="seqResSeg" title="paint grid — snap for writing new steps; never moves existing notes">
+          <button data-sel="1" class="btn mini">1</button>
+          <button data-sel="2" class="btn mini">&frac12;</button>
+          <button data-sel="4" class="btn mini">&#9833;</button>
+          <button data-sel="8" class="btn mini sel">&#9834;</button>
+          <button data-sel="16" class="btn mini">&#9836;</button>
+          <button id="seqTriBtn" class="btn mini" title="triplet mode: ♩→¼³, ♪→♪³ (nothing finer than eighth-triplets)">&#179;</button>
+          <span class="seglbl">write</span>
+        </span>
+        <span class="seg" id="seqBqSeg" title="block rhythm timing — raw = exact merkle onsets (sacrosanct); quantize is a deliberate choice">
+          <button data-bq="0" class="btn mini sel">raw</button>
+          <button data-bq="480" class="btn mini">&frac14;</button>
+          <button data-bq="240" class="btn mini">&frac18;</button>
+          <button data-bq="120" class="btn mini">1/16</button>
+          <span class="seglbl">block</span>
         </span>
         <span class="seg" id="seqBarsSeg">
           <button data-sbars="1" class="btn mini">1</button>
@@ -67,8 +75,8 @@
           <button data-sbars="16" class="btn mini">16</button>
           <span class="seglbl">bars</span>
         </span>
-        <button id="seqClearBtn" class="btn mini" title="clear all painted steps (inherited ghosts stay)">clear steps</button>
-        <span class="seglbl">tap cells to paint (arms the lane) · tap the raw/SEQ pill to flip · right-drag clears</span>
+        <button id="seqClearBtn" class="btn mini" title="clear all painted steps — block rhythm untouched">clear steps</button>
+        <span class="seglbl">tap: hit ▸ rest ▸ clear · drag paints · right-drag clears · gutter pill flips raw/SEQ</span>
       </div>
       <div id="seqWrap"><canvas id="seqCanvas" width="640" height="106"></canvas></div>
     </section>
@@ -97,9 +105,22 @@
     <button id="modeBtn" class="btn" title="loop alignment mode">bars</button>
     <button id="resyncBtn" class="btn" title="reset all parts to bar 0 at the next boundary">⟲ re-align</button>
     <button id="copyBtn" class="btn" title="copy shareable session URL">⧉ link</button>
+    <button id="loopBtn" class="btn" title="export the audible ensemble as one MIDI loop">⤓ loop</button>
     <button id="resetBtn" class="btn danger" title="clear arrangement — return all blocks to the shelf (press twice)">✕</button>
     <p id="status" role="status"></p>
   </footer>
+
+  <div id="loopPop" class="loop-pop" hidden>
+    <div class="thead"><span>ensemble loop · export</span><button id="loopX" title="close (or Esc)">✕</button></div>
+    <div class="wrow"><span>file</span>
+      <button data-t1="1" class="sel">per-track</button><button data-t1="0">single</button>
+    </div>
+    <div class="wrow"><span>drums</span>
+      <button data-dm="keys" class="sel">Ch13·Keys</button><button data-dm="split">Ch1–4·Split</button>
+    </div>
+    <p id="loopSum"></p>
+    <button id="loopDl" class="btn primary">⤓ download .mid</button>
+  </div>
 
   <noscript>This player needs JavaScript (it derives rhythm patterns in your browser).</noscript>
   <script type="module" src="./js/ui.js"></script>

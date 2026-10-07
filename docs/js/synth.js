@@ -67,8 +67,8 @@ export const WAVES = ["sine", "square", "sawtooth", "triangle"];
 // later by adding modTarget to their schema entries.
 
 export const LFO_RATES = [
-  { steps: 1, label: "𝅝", name: "whole" },
-  { steps: 2, label: "𝅗𝅥", name: "half" },
+  { steps: 1, label: "1", name: "whole" },
+  { steps: 2, label: "½", name: "half" },
   { steps: 4, label: "♩", name: "quarter" },
   { steps: 8, label: "♪", name: "eighth" },
   { steps: 16, label: "♬", name: "sixteenth" },

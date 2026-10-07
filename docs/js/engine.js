@@ -22,7 +22,7 @@
 import { BAR_TICKS, NOTE_VELOCITY } from "./protocol.js";
 import { getVoice, VOICES, hasMods, lfoCycleTicks } from "./synth.js";
 import { CELL_TICKS, foldMidi, mapTicksFor, POLY_STACK_CAP, KEY_OFFSET_CAP, DEFAULT_MAP_BARS, MAP_BAR_OPTIONS, MAP_MAX_COLS } from "./notes.js";
-import { SEQ_DEFAULT_RES, SEQ_DEFAULT_BARS, SEQ_MAX_STEPS, SEQ_RESOLUTIONS, SEQ_EXTENTS, DRUM_LANES, seqCellTicks, seqActiveCols, quantizeBlockCols, resnapCells } from "./seq.js";
+import { DRUM_LANES, SEQ_DEFAULT_BARS, SEQ_DEFAULT_SEL, SEQ_UNIT, SEQ_UNITS_MAX, SEQ_EXTENTS, PAINT_SELS, EFFECTIVE_STEPS, paintStepsPerBar, stepTicks, seqLoopTicks, seqUnitWindow, laneTimeline } from "./seq.js";
 
 const PPQ = 480; // §5 ticks per quarter
 const tpsFor = (bpm) => (bpm * PPQ) / 60; // ticks/sec = 960 at 120 BPM
@@ -69,24 +69,33 @@ export class Ensemble {
     this.cells = this._makeCells();
     this.mapOffset = 0;
     this.melodySource = "none"; // 'merkle' | 'none' (empty-column resolution)
-    // ── drum sequencer (v1.4; render-time ribbons — §7.4 patterns are QUANTIZED
-    // for display/playback here, never re-derived; raw block mode is the default,
-    // so a fresh session behaves exactly like before) ──
-    // Per drum lane: mode 'rhythm' (raw merkle onsets, status quo) | 'seq'
-    // (ribbon: quantized block ∪ cells-on − cells-rest). Cells are tri-state
-    // (0 inherit / 1 on / 2 rest) over the FIXED 256-col store; res×bars picks
-    // the looping window. Lanes sound standalone (no block needed) in seq mode.
+    // ── drum sequencer (v1.6 re-design; render-time ribbons) ──
+    // TWO independent grids (owner ruling):
+    //   paint dial (sel + triplet): snap strength for WRITING new notes only —
+    //   changing it never moves existing events. Triplet mode: ♩→¼³(320t),
+    //   ♪→♪³(160t) only; nothing finer than eighth-triplets.
+    //   block timing (blockQuant): the assigned block's rhythm plays RAW
+    //   (exact §7.4 onsets — sacrosanct) unless explicitly quantized ¼/⅛/1/16.
+    // Paint store lives on the 40-tick lattice (straight 16ths and eighth-
+    // triplets coexist exactly): per lane ons[] (hit) + rests[] (silence
+    // window length in units, set at paint time). Loop = bars×1920; lanes
+    // sound standalone (no block) in 'seq' mode. 'rhythm' = status quo raw.
     this.seq = {
-      res: SEQ_DEFAULT_RES,      // steps/bar: 1 whole · 2 half · 4 quarter · 8 eighth · 16 sixteenth
-      bars: SEQ_DEFAULT_BARS,    // looping extent, map-style
-      cells: {},                 // voiceId -> Array(256) of 0/1/2 (manual edits)
+      sel: SEQ_DEFAULT_SEL,      // dial selection 1|2|4|8|16 (steps/bar, straight)
+      triplet: false,            // ³ toggle (applies to ♩/♪ per owner)
+      bars: SEQ_DEFAULT_BARS,    // looping extent
+      blockQuant: 0,             // 0 raw | 480 ¼ | 240 ⅛ | 120 1/16
       modes: {},                 // voiceId -> 'rhythm' | 'seq'
-      cursors: null,             // per-lane {rep, col} while playing
+      lanes: {},                 // voiceId -> {ons: Array(768), rests: Array(768)}
+      cursors: null,             // voiceId -> {rep, idx} over the merged timeline
     };
     for (const id of DRUM_LANES) {
-      this.seq.cells[id] = new Array(SEQ_MAX_STEPS).fill(0);
       this.seq.modes[id] = "rhythm";
+      this.seq.lanes[id] = { ons: new Array(SEQ_UNITS_MAX).fill(0), rests: new Array(SEQ_UNITS_MAX).fill(0) };
     }
+    this._seqTL = {};            // merged-timeline cache per lane
+    this._seqDirty = {};         // rebuild flags
+    for (const id of DRUM_LANES) this._seqDirty[id] = true;
   }
 
   _makeCells() {
@@ -111,11 +120,15 @@ export class Ensemble {
     s.block = block;
     s.part = null;
     if (this.playing && block) s.part = this._buildPart(block, headStart);
+    this._markSeqDirty(s.voiceId);
+    this._seqRephase();
     this.emit();
   }
   clearSlot(i) {
     const s = this.slots[i];
     s.block = null; s.part = null;
+    this._markSeqDirty(s.voiceId);
+    this._seqRephase();
     this.emit();
   }
   toggleMute(i) {
@@ -174,6 +187,8 @@ export class Ensemble {
       this.slots[i].block = src.block;
       this.slots[i].part = src.part;
     }
+    this._markSeqDirty();   // ghosts follow blocks across instruments
+    this._seqRephase();
     this.emit();
   }
 
@@ -249,86 +264,152 @@ export class Ensemble {
     this.emit();
   }
 
-  // ── drum sequencer (player-side) ──
-  get seqActiveCols() { return seqActiveCols(this.seq.res, this.seq.bars); }
-  get seqCell() { return seqCellTicks(this.seq.res); }
-  get seqLoopTicks() { return this.seq.bars * BAR_TICKS; }
+  // ── drum sequencer (player-side, v1.6) ──
+  get seqPaintSteps() { return paintStepsPerBar(this.seq.sel, this.seq.triplet); }
+  get seqStepTicks() { return stepTicks(this.seqPaintSteps); }
+  get seqStepUnits() { return this.seqStepTicks / SEQ_UNIT; }
+  get seqLoopTicks() { return seqLoopTicks(this.seq.bars); }
+  get seqUnits() { return seqUnitWindow(this.seq.bars); }
 
-  // resolution/extent changes RE-SNAP manual cells (position-in-ticks preserved,
-  // nearest new cell wins) and re-phase live cursors — the grid morphs under
-  // the player's finger, the loop keeps rolling (on-the-fly, per owner ask)
-  setSeqRes(steps) {
-    if (!SEQ_RESOLUTIONS.includes(steps) || steps === this.seq.res) return;
-    const old = this.seq.res;
-    this.seq.res = steps;
-    for (const id of DRUM_LANES) this.seq.cells[id] = resnapCells(this.seq.cells[id], old, steps);
-    this._rephaseSeqCursors(old, this.seq.bars);
+  // PAINT dial setters — never touch stored events (freeze ruling): changing
+  // the writing grid is a no-op for existing notes AND for the block layer.
+  setPaintSel(sel) {
+    if (!PAINT_SELS.includes(sel)) return;
+    this.seq.sel = sel;
+    this.emit();
+  }
+  setTriplet(on) {
+    this.seq.triplet = !!on;
+    if (this.seq.triplet && this.seq.sel === 16) this.seq.sel = 8; // ♬ unavailable in ³
     this.emit();
   }
   setSeqBars(bars) {
     if (!SEQ_EXTENTS.includes(bars) || bars === this.seq.bars) return;
-    const oldBars = this.seq.bars;
     this.seq.bars = bars;
-    this._rephaseSeqCursors(this.seq.res, oldBars);
+    this._markSeqDirty();
+    this._seqRephase();
+    this.emit();
+  }
+  // BLOCK timing selector — explicit and separate: raw (0) or ¼/⅛/1/16 grid.
+  setBlockQuant(q) {
+    if (![0, 480, 240, 120].includes(q) || q === this.seq.blockQuant) return;
+    this.seq.blockQuant = q;
+    this._markSeqDirty();
+    this._seqRephase();
     this.emit();
   }
   seqToggleMode(voiceId) {
     if (!(voiceId in this.seq.modes)) return;
     this.seq.modes[voiceId] = this.seq.modes[voiceId] === "seq" ? "rhythm" : "seq";
+    this._seqRephase();
     this.emit();
   }
-  seqPaint(voiceId, col, val) {          // val 0|1|2; outside the extent: no-op
-    const c = this.seq.cells[voiceId];
-    if (!c || col < 0 || col >= this.seqActiveCols) return;
-    c[col] = val === 1 || val === 2 ? val : 0;
+  // paint a unit on the lane (inside the looping window); 'on' and 'rest' are
+  // exclusive, 'rest' carries the CURRENT step size as its window length.
+  seqApplyUnit(voiceId, u, state) {
+    const ln = this.seq.lanes[voiceId];
+    if (!ln || u < 0 || u >= this.seqUnits) return;
+    if (state === "on") { ln.ons[u] = 1; ln.rests[u] = 0; }
+    else if (state === "rest") { ln.ons[u] = 0; ln.rests[u] = this.seqStepUnits; }
+    else { ln.ons[u] = 0; ln.rests[u] = 0; }
+    this._markSeqDirty(voiceId);
   }
-  seqCycle(voiceId, col) {               // tap: inherit → on → rest → inherit
-    const c = this.seq.cells[voiceId];
-    if (!c || col < 0 || col >= this.seqActiveCols) return 0;
-    const v = (c[col] + 1) % 3;
-    c[col] = v;
-    return v;
+  seqCycleUnit(voiceId, u) {              // tap: on → rest → clear → on
+    const ln = this.seq.lanes[voiceId];
+    if (!ln || u < 0 || u >= this.seqUnits) return "clear";
+    const next = ln.ons[u] ? "rest" : ln.rests[u] ? "clear" : "on";
+    this.seqApplyUnit(voiceId, u, next);
+    return next;
   }
-  // quantized column SET of a lane's block (for rendering + playback)
-  seqQuantCols(voiceId) {
+  _markSeqDirty(voiceId) {
+    if (voiceId) this._seqDirty[voiceId] = true;
+    else for (const id of DRUM_LANES) this._seqDirty[id] = true;
+  }
+  // merged timeline for a lane: (raw-or-quantized block ∪ painted-ons) − rests
+  _seqTimeline(voiceId) {
+    if (!this._seqDirty[voiceId] && this._seqTL[voiceId]) return this._seqTL[voiceId];
     const slot = this.slots.find((s) => s.voiceId === voiceId);
-    if (!slot || !slot.block) return null;
-    return quantizeBlockCols(slot.block.pattern.onsets,
-      { loopTicks: slot.block.pattern.loopTicks, res: this.seq.res, bars: this.seq.bars });
+    const pat = slot && slot.block && slot.block.pattern;
+    const ln = this.seq.lanes[voiceId];
+    const tl = laneTimeline({
+      onsets: pat ? pat.onsets : null,
+      loopTicks: pat ? pat.loopTicks : 0,
+      extTicks: this.seqLoopTicks,
+      quantTicks: this.seq.blockQuant,
+      ons: ln ? ln.ons : [],
+      rests: ln ? ln.rests : [],
+    });
+    this._seqTL[voiceId] = tl;
+    this._seqDirty[voiceId] = false;
+    return tl;
   }
-  setSeqState(st) {                       // session restore: defaults first, then apply
-    this.seq.res = SEQ_DEFAULT_RES;
-    this.seq.bars = SEQ_DEFAULT_BARS;
+  seqLaneTimeline(voiceId) { return this._seqTimeline(voiceId); } // UI/export accessor
+  seqClearSteps() {                      // zero painted events, keep modes/grid
     for (const id of DRUM_LANES) {
-      this.seq.cells[id] = new Array(SEQ_MAX_STEPS).fill(0);
-      this.seq.modes[id] = "rhythm";
+      this.seq.lanes[id] = { ons: new Array(SEQ_UNITS_MAX).fill(0), rests: new Array(SEQ_UNITS_MAX).fill(0) };
     }
-    if (st) {
-      if (SEQ_RESOLUTIONS.includes(st.res)) this.seq.res = st.res;
-      if (SEQ_EXTENTS.includes(st.bars)) this.seq.bars = st.bars;
-      for (const id of DRUM_LANES) {
-        if (Array.isArray(st.cells && st.cells[id])) {
-          const arr = new Array(SEQ_MAX_STEPS).fill(0);
-          st.cells[id].slice(0, SEQ_MAX_STEPS).forEach((v, i) => { arr[i] = (v === 1 || v === 2) ? v : 0; });
-          this.seq.cells[id] = arr;
-        }
-        if (st.modes && st.modes[id]) this.seq.modes[id] = st.modes[id] === "seq" ? "seq" : "rhythm";
-      }
-    }
+    this._markSeqDirty();
+    this._seqRephase();
     this.emit();
   }
-  _rephaseSeqCursors(oldRes, oldBars) {
+  _seqRephase() {
     if (!this.playing || !this.seq.cursors) return;
-    const oldLoop = oldBars * BAR_TICKS;
-    const oldCell = seqCellTicks(oldRes);
-    const loop = this.seqLoopTicks, cell = this.seqCell, active = this.seqActiveCols;
+    const loop = this.seqLoopTicks;
+    const cur = Math.max(0, this._curTick());
     for (const id of DRUM_LANES) {
       const c = this.seq.cursors[id];
       if (!c) continue;
-      const abs = c.rep * oldLoop + c.col * oldCell;
-      c.rep = Math.max(0, Math.floor(abs / loop));
-      c.col = Math.max(0, Math.min(active - 1, Math.round((abs - c.rep * loop) / cell)));
+      const tl = this._seqTimeline(id);
+      c.rep = Math.floor(cur / loop);
+      const ph = cur - c.rep * loop;
+      let i = 0;
+      while (i < tl.length && tl[i] < ph) i++;
+      c.idx = i >= tl.length ? 0 : i;
+      if (c.idx === 0 && tl.length && tl[0] < ph) c.rep++; // wrapped past loop end
     }
+  }
+  setSeqState(st) {                       // session restore: defaults first, then apply
+    this.seq.sel = SEQ_DEFAULT_SEL;
+    this.seq.triplet = false;
+    this.seq.bars = SEQ_DEFAULT_BARS;
+    this.seq.blockQuant = 0;
+    for (const id of DRUM_LANES) {
+      this.seq.modes[id] = "rhythm";
+      this.seq.lanes[id] = { ons: new Array(SEQ_UNITS_MAX).fill(0), rests: new Array(SEQ_UNITS_MAX).fill(0) };
+    }
+    if (st) {
+      if (PAINT_SELS.includes(st.sel)) this.seq.sel = st.sel;
+      this.seq.triplet = !!st.triplet;
+      if (SEQ_EXTENTS.includes(st.bars)) this.seq.bars = st.bars;
+      if ([0, 480, 240, 120].includes(st.blockQuant)) this.seq.blockQuant = st.blockQuant;
+      for (const id of DRUM_LANES) {
+        if (st.modes && st.modes[id]) this.seq.modes[id] = st.modes[id] === "seq" ? "seq" : "rhythm";
+        const ln = st.lanes && st.lanes[id];
+        if (ln && Array.isArray(ln.ons) && Array.isArray(ln.rests)) {
+          const onA = new Array(SEQ_UNITS_MAX).fill(0);
+          const restA = new Array(SEQ_UNITS_MAX).fill(0);
+          ln.ons.slice(0, SEQ_UNITS_MAX).forEach((v, u) => { onA[u] = v === 1 ? 1 : 0; });
+          ln.rests.slice(0, SEQ_UNITS_MAX).forEach((v, u) => { restA[u] = (v >= 1 && v <= 255) ? v : 0; });
+          this.seq.lanes[id] = { ons: onA, rests: restA };
+        } else if (st.cells && Array.isArray(st.cells[id]) && PAINT_SELS.includes(st.res)) {
+          // legacy v1.4 snapshot (res-cell arrays): re-map onto the 40-tick lattice
+          const cu = stepTicks(st.res) / SEQ_UNIT;
+          const onA = new Array(SEQ_UNITS_MAX).fill(0);
+          const restA = new Array(SEQ_UNITS_MAX).fill(0);
+          st.cells[id].forEach((v, i) => {
+            const u = i * cu;
+            if (u >= SEQ_UNITS_MAX) return;
+            if (v === 1) onA[u] = 1;
+            else if (v === 2) restA[u] = cu;
+          });
+          this.seq.lanes[id] = { ons: onA, rests: restA };
+          this.seq.sel = st.res;
+        }
+      }
+    }
+    this._markSeqDirty();
+    this._seqRephase();
+    this.emit();
   }
   // resolve a melodic onset's pitch STACK: painted column (capoed) → source-merkle
   // melody of this event → voice default; per-slot transpose folds each last
@@ -433,9 +514,9 @@ export class Ensemble {
     for (const s of this.slots) {
       s.part = s.block ? this._buildPart(s.block, false) : null;
     }
-    // seq cursors: master-grid clocks per lane, aligned to transport tick 0
+    // seq cursors: per-lane read heads over the merged timeline, tick-0 aligned
     this.seq.cursors = {};
-    for (const id of DRUM_LANES) this.seq.cursors[id] = { rep: 0, col: 0 };
+    for (const id of DRUM_LANES) this.seq.cursors[id] = { rep: 0, idx: 0 };
     this.playing = true;
     this.timer = setInterval(() => this._schedule(), SCHED_INTERVAL_MS);
     this.emit();
@@ -475,9 +556,9 @@ export class Ensemble {
       p.entry = b;
       p.cursor = { rep: Math.max(0, Math.floor(b / p.loop)), idx: 0 };
     }
-    // ribbons live on the master grid — re-align means back to column 0 too
+    // ribbons live on the master grid — re-align means back to timeline start too
     if (this.seq.cursors) {
-      for (const id of DRUM_LANES) this.seq.cursors[id] = { rep: 0, col: 0 };
+      for (const id of DRUM_LANES) this.seq.cursors[id] = { rep: 0, idx: 0 };
     }
     this.emit();
   }
@@ -541,25 +622,26 @@ export class Ensemble {
     }
   }
 
-  // ribbon clock: per-lane {rep, col} over the shared master grid
-  // (res×cols looping at bars*1920 ticks, synced across all lanes by design)
+  // ribbon clock (v1.6): per-lane {rep, idx} over the MERGED TIMELINE —
+  // raw-or-quantized block hits ∪ painted hits − rest windows. Positions are
+  // exact 40-tick-lattice ticks; the paint dial never influences this path.
   _scheduleSeq(slot, voice, ctx, now, cur, horizon) {
     const c = this.seq.cursors && this.seq.cursors[voice.id];
     if (!c) return;
-    const cell = this.seqCell, active = this.seqActiveCols, loop = this.seqLoopTicks;
-    const cells = this.seq.cells[voice.id];
-    const quant = this.seqQuantCols(voice.id); // Set of cols | null (no block)
+    const tl = this._seqTimeline(voice.id);
+    if (!tl.length) return;
+    const loop = this.seqLoopTicks;
     for (;;) {
-      const abs = c.rep * loop + c.col * cell;
+      const abs = c.rep * loop + tl[c.idx];
       if (abs >= horizon) break;
       if (abs >= cur - 2) { // stale guard mirrors the part loop
-        const m = cells[c.col];
-        if (m === 1 || (m === 0 && quant && quant.has(c.col))) {
-          const at = Math.max(this._timeAt(abs), now + 0.004);
-          voice.trigger(ctx, this.bus, at, cell / this._tpsBase, NOTE_VELOCITY, 0);
-        }
+        const at = Math.max(this._timeAt(abs), now + 0.004);
+        const nextT = c.idx + 1 < tl.length ? tl[c.idx + 1] : loop + tl[0];
+        const gap = Math.max(SEQ_UNIT, nextT - tl[c.idx]);
+        const dur = Math.min(240, gap) / this._tpsBase;
+        voice.trigger(ctx, this.bus, at, dur, NOTE_VELOCITY, 0);
       }
-      if (++c.col >= active) { c.col = 0; c.rep++; }
+      if (++c.idx >= tl.length) { c.idx = 0; c.rep++; }
     }
   }
 }

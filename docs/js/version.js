@@ -15,10 +15,18 @@
 // 1.4.1 = arm-on-paint (editing a raw lane's cell flips it to SEQ — painting
 // must never be silently inaudible) + gutter mode PILL + status feedback;
 // 1.5.0 = tempo-synced sine modulation — right-click/long-press any melodic
-// slider to oscillate its full min↔max span; ∿ cycle 𝅝·𝅗𝅥·♩·♪·♬ (one full
+// slider to oscillate its full min↔max span; ∿ cycle 1·½·♩·♪·♬ (one full
 // sine loop per duration), tick-domain phase (retunes with BPM), live LFO
 // oscs for filter/Q, per-note sampling for envelope/level/drawbars. Stored as
 // {rate, depth, lo, hi, phase} — depth/lo/hi/phase reserved for future min/max
 // markers without format change. Sound layer → tonebank localStorage only;
-// derivation/sessions/exports untouched (engine trigger gained an optional arg).
-export const APP_VERSION = "1.5.0";
+// derivation/sessions/exports untouched (engine trigger gained an optional arg);
+// 1.6.0 = drum re-design per owner ruling: paint dial is WRITING-SNAP ONLY (40-tick
+// event lattice, existing notes frozen; ³ triplets on ♩/♪), block timing gets its
+// own selector (raw sacrosanct | ¼ | ⅛ | 1/16). ⤓ loop export: whole audible
+// ensemble over the LCM-max loop, owner channel map (lead 11/bass 12/organ 16,
+// drums Ch13·Keys ⇄ Ch1–4·Split GM keys), no program changes, type 0/1 toggle,
+// audible BPM meta, session params &e &w &j &k &i &f (legacy &d still decodes).
+// BMP-glyph rule: no astral-plane chars in UI (the old wide-font duration glyphs
+// rendered as tofu → replaced everywhere by 1 · ½ · ♩ · ♪ · ♬).
+export const APP_VERSION = "1.6.0";

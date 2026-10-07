@@ -167,3 +167,111 @@ export function downloadMidi(notes, rootHex, height = null) {
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
+
+// ── v1.6 ENSEMBLE LOOP EXPORT ───────────────────────────────────────────────
+// The whole arrangement as currently audible, written once over the LCM loop.
+// Owner channel map (hardware templates pre-select instruments — NO program
+// changes are emitted, and nothing else goes in the file beyond notes,
+// channels, one tempo meta, and Type 1 track names):
+//   lead  ▸ ch 11 (0-indexed 10)   bass ▸ ch 12 (11)   organ ▸ ch 16 (15)
+//   drums ▸ "keys" mode: all four on ch 13 (12) at GM keys
+//           kick 36 / snare 38 / hat·c 42 / hat·o 46
+//   drums ▸ "split" mode: kick ch1, snare ch2, hat·c ch3, hat·o ch4 (same keys)
+export const ENSEMBLE_MIDI_MAP = {
+  melodic: { "lead-synth": 10, "bass-synth": 11, "organ": 15 },
+  drumNotes: { "bass-drum": 36, "snare": 38, "hat-closed": 42, "hat-open": 46 },
+  drumsKeysChan: 12,
+  drumsSplitChan: { "bass-drum": 0, "snare": 1, "hat-closed": 2, "hat-open": 3 },
+};
+
+// parts: [{ name, chan, events: [{ tick, len, keys:[..] }] }] — absolute ticks.
+// type1: one named track per part; type0: one track, channels interleaved.
+// bpm: tempo meta carries the AUDIBLE tempo. Note-off before note-on at the
+// same tick; ons ascending by key; running status; duty 80% like every writer.
+export function writeEnsembleLoopBytes({ parts, bpm = 120, type1 = true }) {
+  const uspb = Math.max(1, Math.round(60000000 / (bpm || 120)));
+  const tempoMeta = () => {
+    const b = vlq(0);
+    return [...b, 0xff, 0x51, 0x03, (uspb >> 16) & 0xff, (uspb >> 8) & 0xff, uspb & 0xff];
+  };
+  const nameMeta = (s) => {
+    const b = ascii(s);
+    return [0x00, 0xff, 0x03, b.length, ...b];
+  };
+  const trackBytes = (events, metaPrefix) => {
+    const trk = [...metaPrefix];
+    let prev = 0, last = -1;
+    for (const ev of events) {
+      trk.push(...vlq(ev.tick - prev));
+      prev = ev.tick;
+      if (ev.status !== last) { trk.push(ev.status); last = ev.status; }
+      trk.push(ev.d1, ev.d2);
+    }
+    trk.push(0x00, 0xff, 0x2f, 0x00);
+    return trk;
+  };
+  const expand = (list) => { // per part → sorted on/off streams
+    const evs = [];
+    for (const e of list) {
+      const raw = Math.max(40, Math.round(e.len || 0));
+      const { sounding } = dutySplit(raw);
+      for (const key of [...e.keys].sort((a, b) => a - b)) {
+        if (!key) continue;
+        evs.push({ tick: e.tick, status: 0x90 | (e.chan & 0x0f), d1: key & 0x7f, d2: NOTE_VELOCITY });
+        evs.push({ tick: e.tick + Math.min(sounding, raw), status: 0x80 | (e.chan & 0x0f), d1: key & 0x7f, d2: 0x00 });
+      }
+    }
+    return evs;
+  };
+  const sortEv = (a, b) =>
+    a.tick - b.tick ||
+    ((a.status >> 4) === 0x8 ? 0 : 1) - ((b.status >> 4) === 0x8 ? 0 : 1) ||
+    a.status - b.status || a.d1 - b.d1;
+
+  const tracks = [];
+  if (type1) {
+    parts.forEach((p, i) => {
+      const evs = expand(p.events.map((e) => ({ ...e, chan: p.chan })));
+      evs.sort(sortEv);
+      const meta = i === 0 ? [...tempoMeta(), ...nameMeta(p.name)] : nameMeta(p.name);
+      tracks.push(trackBytes(evs, meta));
+    });
+  } else {
+    const all = parts.flatMap((p) => expand(p.events.map((e) => ({ ...e, chan: p.chan }))));
+    all.sort(sortEv);
+    tracks.push(trackBytes(all, tempoMeta()));
+  }
+
+  const header = [
+    ...ascii("MThd"), ...u32(6),
+    ...u16(type1 ? 1 : 0), ...u16(tracks.length), ...u16(TICKS_PER_QUARTER),
+  ];
+  let size = header.length;
+  for (const t of tracks) size += 8 + t.length;
+  const out = new Uint8Array(size);
+  let p = 0;
+  out.set(header, p); p += header.length;
+  for (const t of tracks) {
+    out.set(ascii("MTrk"), p); p += 4;
+    out.set(u32(t.length), p); p += 4;
+    out.set(t, p); p += t.length;
+  }
+  return out;
+}
+
+export function ensembleFileName(bars, rootHex = null) {
+  return `ensemble_${bars}b_${rootHex ? rootHex.slice(0, 8) : "seq"}.mid`;
+}
+
+export function downloadEnsembleLoop(opts) {
+  const bytes = writeEnsembleLoopBytes(opts);
+  const blob = new Blob([bytes], { type: "audio/midi" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = ensembleFileName(opts.bars || 1, opts.rootHex);
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}

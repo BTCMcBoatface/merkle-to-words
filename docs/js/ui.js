@@ -6,7 +6,7 @@
 import { derivePattern, PROTOCOL_ID, PROTOCOL_VERSION } from "./protocol.js";
 import { deriveMelody, noteName, CELL_TICKS, foldMidi, mapTicksFor } from "./notes.js";
 import { fetchTip, fetchByHeight } from "./api.js";
-import { downloadMidi, downloadMidiMapped } from "./smf.js";
+import { downloadMidi, downloadMidiMapped, downloadEnsembleLoop, ENSEMBLE_MIDI_MAP } from "./smf.js";
 import { Ensemble, MAX_BLOCKS } from "./engine.js";
 import { getVoice, TONE_SCHEMA, TONE_DEFAULTS, toneFor, setTone, resetTone, LFO_RATES, LFO_DEFAULT_RATE, getMods, setMods, clearMods } from "./synth.js";
 import { DRUM_LANES, LANE_LABELS } from "./seq.js";
@@ -84,10 +84,15 @@ function view() {
     mapOffset: engine.mapOffset,
     source: engine.melodySource,
     seq: {
-      res: engine.seq.res,
+      sel: engine.seq.sel,
+      triplet: engine.seq.triplet,
       bars: engine.seq.bars,
+      blockQuant: engine.seq.blockQuant,
       modes: Object.assign({}, engine.seq.modes),
-      cells: DRUM_LANES.reduce((o, id) => { o[id] = engine.seq.cells[id].slice(); return o; }, {}),
+      lanes: DRUM_LANES.reduce((o, id) => {
+        o[id] = { ons: engine.seq.lanes[id].ons.slice(), rests: engine.seq.lanes[id].rests.slice() };
+        return o;
+      }, {}),
     },
   };
 }
@@ -249,10 +254,19 @@ $("#polyChk").addEventListener("change", (e) => {
 $("#octDown").addEventListener("click", () => { octShift = Math.max(-1, octShift - 1); drawMap(); });
 $("#octUp").addEventListener("click", () => { octShift = Math.min(4, octShift + 1); drawMap(); });
 
-// ── drum sequencer controls (on-the-fly grid morph; live-safe) ──
-document.querySelectorAll("#seqResSeg button").forEach((btn) =>
+// ── drum sequencer controls (v1.6: paint dial + block timing, independent) ──
+document.querySelectorAll("#seqResSeg button[data-sel]").forEach((btn) =>
   btn.addEventListener("click", () => {
-    engine.setSeqRes(parseInt(btn.dataset.res, 10));
+    engine.setPaintSel(parseInt(btn.dataset.sel, 10));
+    persist(); render();
+  }));
+$("#seqTriBtn").addEventListener("click", () => {
+  engine.setTriplet(!engine.seq.triplet);
+  persist(); render();
+});
+document.querySelectorAll("#seqBqSeg button").forEach((btn) =>
+  btn.addEventListener("click", () => {
+    engine.setBlockQuant(parseInt(btn.dataset.bq, 10));
     persist(); render();
   }));
 document.querySelectorAll("#seqBarsSeg button").forEach((btn) =>
@@ -261,8 +275,8 @@ document.querySelectorAll("#seqBarsSeg button").forEach((btn) =>
     persist(); render();
   }));
 $("#seqClearBtn").addEventListener("click", () => {
-  for (const id of DRUM_LANES) engine.seq.cells[id].fill(0);
-  setStatus("drum steps cleared — inherited block ghosts stay");
+  engine.seqClearSteps();
+  setStatus("drum steps cleared — block rhythm untouched");
   persist(); render();
 });
 
@@ -394,8 +408,14 @@ function syncMapBtns() {
 }
 
 function renderSeq() {
-  document.querySelectorAll("#seqResSeg button").forEach((btn) =>
-    btn.classList.toggle("sel", parseInt(btn.dataset.res, 10) === engine.seq.res));
+  document.querySelectorAll("#seqResSeg button[data-sel]").forEach((btn) => {
+    btn.classList.toggle("sel", parseInt(btn.dataset.sel, 10) === engine.seq.sel);
+    btn.classList.toggle("gone", engine.seq.triplet && btn.dataset.sel === "16"); // 1/16³ unavailable
+  });
+  const tri = $("#seqTriBtn");
+  if (tri) tri.classList.toggle("sel", engine.seq.triplet);
+  document.querySelectorAll("#seqBqSeg button").forEach((btn) =>
+    btn.classList.toggle("sel", parseInt(btn.dataset.bq, 10) === engine.seq.blockQuant));
   document.querySelectorAll("#seqBarsSeg button").forEach((btn) =>
     btn.classList.toggle("sel", parseInt(btn.dataset.sbars, 10) === engine.seq.bars));
   drawSeq();
@@ -427,16 +447,20 @@ function renderMap() {
 
 // mapped export pitch SETS: painted stack → else the block's merkle melody
 // (deterministic; voice defaults are a player concept and never enter files — §6)
-// ── drum sequencer (v1.4 ribbons) ──
-// Four horizontal lanes, customary kit order bottom→top (kick, snare, hat·c,
-// hat·o). One shared grid: extent in bars (map-style) × live resolution
-// (whole→16th). Cells are tri-state — tap cycles inherit ▸ on ▸ rest ▸ inherit;
-// a held stroke paints that target across the row; right-drag clears to
-// inherit. Inherited cells ghost the assigned block's quantized rhythm. Tapping
-// the gutter flips the lane raw-merkle ▸ seq-ribbon. Pure render-time: blocks
-// still derive E(R) untouched; "raw" lanes behave exactly as before.
+// ── drum sequencer (v1.6 ribbons: paint grid + block timing, separated) ──
+// Four lanes, customary kit order bottom→top (kick, snare, hat·c, hat·o).
+// TWO independent grids (owner ruling):
+//   PAINT dial (1 · ½ · ♩ · ♪ · ♬ + ³ toggle): snap strength for WRITING only —
+//     never moves existing events. ³ applies to ♩ (→320t) and ♪ (→160t) only.
+//   BLOCK selector (raw | ¼ | ⅛ | 1/16): the assigned block plays its exact
+//     §7.4 onsets (sacrosanct, default) or is explicitly quantized.
+// Paint lives on the 40-tick lattice; the merged timeline (block ∪ ons − rests)
+// draws with EXACT positions: solid magenta = your hit at step cells, cyan
+// sliver = block hit at its true tick, red windows = rests (suppress all inside).
+// Tap cycles on ▸ rest ▸ clear; stroke paints the target; right-drag clears;
+// gutter pill flips raw ▸ seq. Render-time only — E(R) derivation untouched.
 const SQ_ROWS = 4, SQ_ROW_H = 26, SQ_GUT = 46;
-let seqGeom = { cellW: 12, cols: 32 };
+let seqGeom = { cellW: 12, cols: 32, su: 2, stepT: 240 };
 let seqStroke = null, lastSeqXY = null;
 
 function seqCellFromXY(x, y) {
@@ -448,22 +472,22 @@ function seqCellFromXY(x, y) {
   const col = Math.floor((x - SQ_GUT) / seqGeom.cellW);
   const r = Math.floor(y / SQ_ROW_H);
   if (col < 0 || col >= seqGeom.cols || r < 0 || r >= SQ_ROWS) return null;
-  return { lane: DRUM_LANES[SQ_ROWS - 1 - r], col };
+  return { lane: DRUM_LANES[SQ_ROWS - 1 - r], u: col * seqGeom.su };
 }
 
 function drawSeq() {
   const canvas = $("#seqCanvas"), wrap = $("#seqWrap");
   if (!canvas || !wrap) return;
-  const cols = engine.seqActiveCols, res = engine.seq.res;
+  const steps = engine.seqPaintSteps;
+  const stepT = 1920 / steps, su = stepT / 40;
+  const cols = engine.seq.bars * steps;
   const cellW = Math.max(12, Math.floor((wrap.clientWidth - SQ_GUT - 6) / cols));
-  seqGeom = { cellW, cols };
+  seqGeom = { cellW, cols, su, stepT };
   canvas.width = SQ_GUT + cellW * cols;
   canvas.height = SQ_ROWS * SQ_ROW_H + 2;
   const g = canvas.getContext("2d");
   g.clearRect(0, 0, canvas.width, canvas.height);
-
-  const quants = {};
-  for (const id of DRUM_LANES) quants[id] = engine.seqQuantCols(id);
+  const X = (t) => SQ_GUT + (t / stepT) * cellW;
 
   for (let r = 0; r < SQ_ROWS; r++) {
     const lane = DRUM_LANES[SQ_ROWS - 1 - r];          // bottom row = kick
@@ -483,45 +507,47 @@ function drawSeq() {
       g.fillStyle = "#8a93a6";
     }
     g.font = "bold 8px sans-serif";
-    g.fillText(seqMode ? "SEQ ▾" : "raw ▾", lane === "bass-drum" || lane === "hat-closed" ? 9 : 10, y + 21.5);
+    g.fillText(seqMode ? "SEQ ▾" : "raw ▾", 9, y + 21.5);
 
-    const cells = engine.seq.cells[lane], qset = quants[lane];
-    for (let c = 0; c < cols; c++) {
-      const x = SQ_GUT + c * cellW;
-      const st = cells[c];
-      if (st === 1) {
-        g.fillStyle = "#7dd3fc";
-        g.fillRect(x + 1, y + 2, Math.max(2, cellW - 2), SQ_ROW_H - 4);
-      } else if (st === 2) {
-        g.strokeStyle = "#f87171"; g.lineWidth = 1.4;
-        g.beginPath();
-        g.moveTo(x + 3, y + SQ_ROW_H / 2 - 4); g.lineTo(x + cellW - 3, y + SQ_ROW_H / 2 + 4);
-        g.moveTo(x + cellW - 3, y + SQ_ROW_H / 2 - 4); g.lineTo(x + 3, y + SQ_ROW_H / 2 + 4);
-        g.stroke();
-      } else if (qset && qset.has(c)) {
-        g.fillStyle = seqMode ? "rgba(125,211,252,.45)" : "rgba(125,211,252,.20)";
-        g.fillRect(x + 2, y + 4, Math.max(1, cellW - 4), SQ_ROW_H - 8);
+    const ln = engine.seq.lanes[lane];
+    for (let u = 0; u < engine.seqUnits; u++) {        // rest windows first (behind)
+      const L = ln.rests[u];
+      if (!L) continue;
+      const x1 = X(u * 40), x2 = X((u + L) * 40);
+      g.fillStyle = "rgba(248,113,113,.12)";
+      g.fillRect(x1, y + 1, Math.max(2, x2 - x1 - 1), SQ_ROW_H - 2);
+      g.strokeStyle = "rgba(248,113,113,.5)"; g.lineWidth = 1;
+      g.strokeRect(x1 + .5, y + 1.5, Math.max(2, x2 - x1 - 2), SQ_ROW_H - 3);
+    }
+    for (const t of engine.seqLaneTimeline(lane)) {
+      if (ln.ons[Math.floor(t / 40)] === 1) {          // painted: full cell
+        g.fillStyle = "#f0abfc";
+        g.fillRect(X(t) + 1, y + 2, Math.max(3, cellW - 2), SQ_ROW_H - 4);
+      } else {                                         // block hit: exact tick
+        g.fillStyle = seqMode ? "rgba(125,211,252,.85)" : "rgba(125,211,252,.35)";
+        g.fillRect(X(t), y + 4, 3, SQ_ROW_H - 8);
       }
     }
   }
   const H = SQ_ROWS * SQ_ROW_H;
   for (let c = 0; c <= cols; c++) {                     // beat/bar grid on top
     const x = SQ_GUT + c * cellW + 0.5;
-    const isBar = c % res === 0;
-    const isBeat = res >= 4 && c % (res / 4) === 0;
+    const isBar = c % steps === 0;
+    const beatDiv = steps % 4 === 0 ? steps / 4 : 0;   // beat lines only on straight grids
+    const isBeat = beatDiv > 0 && c % beatDiv === 0;
     g.strokeStyle = isBar ? "#4a5468" : (isBeat ? "rgba(42,48,64,.9)" : "rgba(42,48,64,.35)");
     g.lineWidth = isBar ? 1.4 : 1;
     g.beginPath(); g.moveTo(x, 0); g.lineTo(x, H); g.stroke();
   }
   g.fillStyle = "#8a93a6"; g.font = "8px sans-serif";
-  for (let b = 0; b < engine.seq.bars; b++) g.fillText(String(b + 1), SQ_GUT + b * res * cellW + 2, H - 2);
+  for (let b = 0; b < engine.seq.bars; b++) g.fillText(String(b + 1), SQ_GUT + b * steps * cellW + 2, H - 2);
 }
 
 function seqStrokeAt(x, y) {
   if (!seqStroke) return;
   const h = seqCellFromXY(x, y);
   if (!h || h.gutter || h.lane !== seqStroke.lane) return;
-  engine.seqPaint(h.lane, h.col, seqStroke.val);
+  engine.seqApplyUnit(h.lane, h.u, seqStroke.val);
   drawSeq();
 }
 
@@ -541,11 +567,11 @@ function wireSeqCanvas() {
       persist(); render(); return;
     }
     let val;
-    if (e.button === 2) { val = 0; engine.seqPaint(h.lane, h.col, 0); } // right-drag clears to inherit
-    else { val = engine.seqCycle(h.lane, h.col); }                      // tap: inherit ▸ on ▸ rest ▸ inherit
+    if (e.button === 2) { val = "clear"; engine.seqApplyUnit(h.lane, h.u, "clear"); } // right-drag clears
+    else { val = engine.seqCycleUnit(h.lane, h.u); }                        // tap: on ▸ rest ▸ clear
     // Painting an audible cell (hit or rest) in a raw lane ARMS the lane —
     // edits must never silently do nothing (v1.4.1, owner-reported confusion)
-    if (val !== 0 && engine.seq.modes[h.lane] !== "seq") {
+    if (val !== "clear" && engine.seq.modes[h.lane] !== "seq") {
       engine.seqToggleMode(h.lane);
       setStatus(`${LANE_LABELS[h.lane]} armed: SEQ — your edits play now (tap its pill for raw)`);
     }
@@ -587,6 +613,120 @@ function exportPitchSets(b) {
     return [b.melody[i % b.melody.length]];
   });
 }
+
+// ── ENSEMBLE LOOP EXPORT (v1.6) ─────────────────────────────────────────────
+// One file = everything AUDIBLE right now, over the common-zero loop. All app
+// lengths are powers of 2 (blocks 1–8, grid/map 1–16 bars) so the LCM is just
+// the MAX active period — every part re-converges exactly there (the engine's
+// phase-anchor invariant). Block rhythm exports per the current BLOCK selector
+// (raw onsets by default; quantized only if explicitly set). Melodic pitches =
+// painted map stack incl. capo + transpose, exactly as heard. Velocity 127.
+// Channels = ENSEMBLE_MIDI_MAP (owner template: ch11/12/16; drums Ch13·Keys ⇄
+// Ch1–4·Split). NO program changes; extras = notes + tempo + Type-1 names only.
+const exportOpts = { open: false, type1: true, split: false };
+const drumNoteKey = (voiceId) => ENSEMBLE_MIDI_MAP.drumNotes[voiceId];
+const drumLaneChan = (voiceId) =>
+  exportOpts.split ? ENSEMBLE_MIDI_MAP.drumsSplitChan[voiceId] : ENSEMBLE_MIDI_MAP.drumsKeysChan;
+
+const BAR_TICKS_UI = 1920; // quarter=480 grid — engine tick domain
+
+function buildEnsembleParts() {
+  const melodic = [], rawDrums = [], seqLanes = [];
+  let bars = 1;
+  for (const s of engine.slots) {
+    const v = getVoice(s.voiceId);
+    if (s.muted) continue;
+    if (v.melodic) {
+      if (!s.block) continue;
+      melodic.push(s);
+      bars = Math.max(bars, s.block.pattern.loopTicks / BAR_TICKS_UI);
+    } else if (engine.seq.modes[v.id] === "seq") {
+      const tl = engine.seqLaneTimeline(v.id);
+      if (tl.length) { seqLanes.push({ v, tl }); bars = Math.max(bars, engine.seq.bars); }
+    } else if (s.block) {
+      rawDrums.push(s);
+      bars = Math.max(bars, s.block.pattern.loopTicks / BAR_TICKS_UI);
+    }
+  }
+  if (melodic.length) bars = Math.max(bars, engine.mapBars);  // pitch-map period rides along
+  if (!melodic.length && !rawDrums.length && !seqLanes.length) return null;
+  const extTicks = bars * BAR_TICKS_UI;
+  const parts = [];
+
+  for (const s of melodic) {
+    const v = getVoice(s.voiceId), pat = s.block.pattern, evs = [];
+    for (let rep = 0; rep * pat.loopTicks < extTicks; rep++) {
+      for (let idx = 0; idx < pat.onsets.length; idx++) {
+        const o = pat.onsets[idx];
+        const abs = rep * pat.loopTicks + o.tick;
+        if (abs >= extTicks) continue;
+        const keys = engine._pitchStackFor(abs, { block: s.block }, idx, v, s);
+        if (keys.length) evs.push({ tick: abs, len: o.soundingTicks, keys });
+      }
+    }
+    evs.sort((a, b) => a.tick - b.tick);
+    parts.push({ name: v.label, chan: ENSEMBLE_MIDI_MAP.melodic[v.id], events: evs });
+  }
+  for (const s of rawDrums) {
+    const v = getVoice(s.voiceId), pat = s.block.pattern, evs = [];
+    for (let rep = 0; rep * pat.loopTicks < extTicks; rep++) {
+      for (const o of pat.onsets) {
+        const t = rep * pat.loopTicks + o.tick;
+        if (t < extTicks) evs.push({ tick: t, len: o.soundingTicks, keys: [drumNoteKey(v.id)] });
+      }
+    }
+    parts.push({ name: v.label, chan: drumLaneChan(v.id), events: evs });
+  }
+  for (const { v, tl } of seqLanes) {
+    const loopT = engine.seq.bars * BAR_TICKS_UI;
+    const evs = [];
+    for (let i = 0; i < tl.length; i++) {
+      const gap = tl.length > 1
+        ? (i + 1 < tl.length ? tl[i + 1] - tl[i] : loopT - tl[i] + tl[0])
+        : loopT;
+      const len = Math.max(40, Math.min(240, gap));
+      for (let rep = 0; rep * loopT < extTicks; rep++) {
+        const t = tl[i] + rep * loopT;
+        if (t < extTicks) evs.push({ tick: t, len, keys: [drumNoteKey(v.id)] });
+      }
+    }
+    evs.sort((a, b) => a.tick - b.tick);
+    parts.push({ name: v.label, chan: drumLaneChan(v.id), events: evs });
+  }
+  let rootHex = null;
+  for (const s of engine.slots) if (s.block) { rootHex = s.block.rootHex; break; }
+  return { parts, bars, rootHex };
+}
+
+const loopBtn = $("#loopBtn"), loopPop = $("#loopPop");
+function syncLoopPop() {
+  if (!loopPop) return;
+  loopPop.hidden = !exportOpts.open;
+  if (!exportOpts.open) return;
+  document.querySelectorAll("#loopPop [data-t1]").forEach((btn) =>
+    btn.classList.toggle("sel", (btn.dataset.t1 === "1") === exportOpts.type1));
+  document.querySelectorAll("#loopPop [data-dm]").forEach((btn) =>
+    btn.classList.toggle("sel", (btn.dataset.dm === "split") === exportOpts.split));
+  const ex = buildEnsembleParts();
+  const sum = $("#loopSum");
+  if (sum) {
+    sum.textContent = ex
+      ? `${ex.bars} bar loop · ${ex.parts.length} part${ex.parts.length === 1 ? "" : "s"} · ${engine.bpm} BPM · ${exportOpts.type1 ? "type 1" : "type 0"}`
+      : "nothing audible — play a block or arm a ribbon lane";
+  }
+}
+loopBtn.addEventListener("click", () => { exportOpts.open = !exportOpts.open; syncLoopPop(); });
+$("#loopX").addEventListener("click", () => { exportOpts.open = false; syncLoopPop(); });
+document.querySelectorAll("#loopPop [data-t1]").forEach((btn) =>
+  btn.addEventListener("click", () => { exportOpts.type1 = btn.dataset.t1 === "1"; syncLoopPop(); }));
+document.querySelectorAll("#loopPop [data-dm]").forEach((btn) =>
+  btn.addEventListener("click", () => { exportOpts.split = btn.dataset.dm === "split"; syncLoopPop(); }));
+$("#loopDl").addEventListener("click", () => {
+  const ex = buildEnsembleParts();
+  if (!ex) { setStatus("nothing audible to export — play a block or arm a ribbon lane", true); return; }
+  downloadEnsembleLoop({ parts: ex.parts, bpm: engine.bpm, type1: exportOpts.type1, bars: ex.bars, rootHex: ex.rootHex });
+  setStatus(`loop exported · ${ex.bars}b · ${ex.parts.length} parts · ch ${exportOpts.split ? "1–4 split" : "13 keys"} · no program changes`);
+});
 
 // ── snapshots ──
 function loadSnaps() { migrateSnaps(); try { return JSON.parse(localStorage.getItem(SNAP_KEY)) || []; } catch (e) { return []; } }
@@ -1055,7 +1195,9 @@ $("#resyncBtn").addEventListener("click", () => {
   setStatus("re-aligned: all parts back to tick 0");
 });
 window.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && openTone !== null) { openTone = null; render(); }
+  if (e.key !== "Escape") return;
+  if (exportOpts.open) { exportOpts.open = false; syncLoopPop(); return; }
+  if (openTone !== null) { openTone = null; render(); }
 });
 $("#copyBtn").addEventListener("click", async () => {
   const url = session.shareURL(view());

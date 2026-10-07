@@ -217,3 +217,33 @@ h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: var
 /* transport reverb (one whole-mix knob) */
 #transport .fx { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--dim); }
 #reverbIn { width: 92px; accent-color: var(--accent2); }
+
+/* drum sequencer v1.6: triplet-mode hidden step + export popup */
+#seqResSeg button.gone { display: none; }
+.loop-pop {
+  position: fixed; right: 12px; bottom: calc(86px + env(safe-area-inset-bottom)); z-index: 35;
+  width: min(92vw, 320px);
+  background: var(--card2); border: 1.5px solid var(--accent); border-radius: var(--radius);
+  padding: 10px 12px 12px; box-shadow: 0 14px 34px rgba(0, 0, 0, 0.6);
+  display: flex; flex-direction: column; gap: 8px;
+}
+.loop-pop[hidden] { display: none; }
+.loop-pop .thead { display: flex; align-items: center; gap: 8px; }
+.loop-pop .thead span {
+  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 12px; font-weight: 700; color: var(--accent); letter-spacing: 0.4px; text-transform: uppercase;
+}
+.loop-pop .thead button {
+  background: none; border: 1px solid var(--line); color: var(--dim);
+  border-radius: 8px; padding: 2px 8px; font-size: 12px; cursor: pointer;
+}
+.loop-pop .thead button:hover { color: var(--danger); border-color: var(--danger); }
+.loop-pop .wrow { display: flex; align-items: center; gap: 5px; font-size: 10px; color: var(--dim); flex-wrap: wrap; }
+.loop-pop .wrow span { width: 42px; flex: none; }
+.loop-pop .wrow button {
+  background: none; border: 1px solid var(--line); color: var(--dim);
+  border-radius: 8px; padding: 3px 8px; font-size: 11px; cursor: pointer;
+}
+.loop-pop .wrow button.sel { color: var(--accent); border-color: var(--accent); }
+#loopSum { margin: 0; color: var(--dim); font-size: 11px; }
+.loop-pop .btn.primary { align-self: stretch; }
