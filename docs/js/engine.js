@@ -3,7 +3,8 @@
 //
 // Design stance (per user: "do not box in"):
 //   - anchorTick is PER PART: 0 = anchored (tick-0 locked to transport-0 —
-//     all bars re-converge there); head-start entry sets anchor = entryTick.
+//     all bars re-converge there; parts added mid-play enter at the next
+//     boundary at their correct pattern phase).
 //   - cycleLen is COMPUTED, never hardcoded, so future longer loops don't break
 //     master mode.
 //   - Tempo is a piecewise tick↔second map (segments): setBpm() queues a change
@@ -28,7 +29,6 @@ const PPQ = 480; // §5 ticks per quarter
 const tpsFor = (bpm) => (bpm * PPQ) / 60; // ticks/sec = 960 at 120 BPM
 const LOOKAHEAD_SEC = 0.12;
 const SCHED_INTERVAL_MS = 25;
-const REFERENCE_CYCLE = BAR_TICKS * 8; // 15360: max current loop, floor for master cycle
 const MAP_BAR_SET = new Set(MAP_BAR_OPTIONS);
 
 export const SLOT_INSTRUMENTS = VOICES.map((v) => v.id); // 7 slots, fixed order
@@ -115,11 +115,11 @@ export class Ensemble {
   }
 
   // ── arrangement ──
-  setSlot(i, block, { headStart = false } = {}) {
+  setSlot(i, block) {
     const s = this.slots[i];
     s.block = block;
     s.part = null;
-    if (this.playing && block) s.part = this._buildPart(block, headStart);
+    if (this.playing && block) s.part = this._buildPart(block);
     this._markSeqDirty(s.voiceId);
     this._seqRephase();
     this.emit();
@@ -450,9 +450,26 @@ export class Ensemble {
   }
 
   // ── clock geometry ──
+  // The audible period of the whole ensemble: block loops, the melody-map
+  // extent (melodic parts sing through it), and armed seq ribbons. All are
+  // powers of 2, so the common period is the MAX — mirrors buildEnsembleParts
+  // (the ⤓ loop export) by design. Reads s.block (not s.part) so it is also
+  // correct while stopped (label display); muted slots don't sound.
   get cycleLen() {
-    let mx = REFERENCE_CYCLE;
-    for (const s of this.slots) if (s.part) mx = Math.max(mx, s.part.loop);
+    let mx = BAR_TICKS;
+    let melodic = false;
+    for (const s of this.slots) {
+      if (s.muted || !s.block) continue;
+      mx = Math.max(mx, s.block.pattern.loopTicks);
+      if (getVoice(s.voiceId).melodic) melodic = true;
+    }
+    if (melodic) mx = Math.max(mx, mapTicksFor(this.mapBars));
+    for (const id of DRUM_LANES) {
+      if (this.seq.modes[id] !== "seq") continue;
+      const s = this.slots.find((x) => x.voiceId === id);
+      if (s && s.muted) continue;
+      if (this._seqTimeline(id).length) mx = Math.max(mx, seqLoopTicks(this.seq.bars));
+    }
     return mx;
   }
   _quantum() { return this.mode === "master" ? this.cycleLen : BAR_TICKS; }
@@ -475,13 +492,13 @@ export class Ensemble {
     const t = this._curTick();
     return t <= 0 ? 0 : (Math.floor(t / q) + 1) * q;
   }
-  _buildPart(block, headStart) {
+  _buildPart(block) {
     const p = block.pattern;
     const entry = this.playing ? this._nextBoundary() : 0;
     const loop = p.loopTicks;
     return {
       block, onsets: p.onsets, loop,
-      anchor: headStart ? entry : 0, // parameterized phase policy
+      anchor: 0, // anchored: pattern phase locked to transport tick 0
       entry,
       cursor: { rep: Math.max(0, Math.floor(entry / loop)), idx: 0 },
     };
@@ -512,7 +529,7 @@ export class Ensemble {
     this._cycleIdx = 0;
     this._lfos = {};   // fresh LFO service; oscillators spawn lazily per rate
     for (const s of this.slots) {
-      s.part = s.block ? this._buildPart(s.block, false) : null;
+      s.part = s.block ? this._buildPart(s.block) : null;
     }
     // seq cursors: per-lane read heads over the merged timeline, tick-0 aligned
     this.seq.cursors = {};

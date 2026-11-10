@@ -36,4 +36,11 @@
 // up automatically (schema-driven); ∿ modulation wired on drum paths too (per-hit
 // scalar sampling); persistence stays tonebank-local (never URL). Defaults = the
 // old hard-coded constants, so fresh sessions sound exactly like pre-1.7.0.
-export const APP_VERSION = "1.7.0";
+// 1.7.1 = patch round (bug fixes, no feature/semantics change): removed the dead
+// head-start part-entry path (never called; its entry/anchor math double-counted);
+// addBlock guards against in-flight duplicates (double-click / LIVE-poll races);
+// LIVE eviction re-indexes the tap-to-move selection instead of letting it point
+// at the wrong block; cycleLen now computes the true audible period (block loops
+// + melody-map extent + armed seq ribbons, muted skipped — mirrors the ⤓ loop
+// export) and the mode button label shows it instead of a fixed "8-bar cycle".
+export const APP_VERSION = "1.7.1";

@@ -44,8 +44,10 @@ Three pillars:
   (§5: ch 9, key 35, 120 BPM). Nothing in the player may alter §2–§9.
 - **Transport semantics stay parameterized, not decided-away:** part phase anchor
   (`anchorTick`) per part — anchored default = all parts at bar 0 on Play, power-of-2
-  loops re-converge every cycle; head-start entry exists; `resyncAllToTop()`;
-  `cycleLen` computed, never hardcoded.
+  loops re-converge every cycle; `resyncAllToTop()`; `cycleLen` computed, never
+  hardcoded (v1.7.1: true audible period — block loops + map extent + armed seq
+  ribbons, muted skipped — mirrors the ⤓ loop export; the old never-called
+  head-start entry path was removed as dead code).
 - **Tempo is a piecewise tick↔second map** (segments): continuous at boundaries,
   pending changes commit at the next shared boundary (bar edge / cycle top) so the
   ensemble retimes together and never desyncs.
@@ -102,6 +104,7 @@ Three pillars:
 | Ensemble loop export = session state on file, player-side (Oct 6, BUILT v1.6.0) | ⤓ loop writes the AUDIBLE whole arrangement (melody-map pitches w/ capo+transpose baked, raw-or-quantized drum timing per lane incl. standalone ribbons, muted parts absent) over the common-zero loop — all lengths are powers of 2 so LCM = MAX active period (engine's phase-anchor invariant guarantees re-convergence; 1-bar export legit). Owner channel map locked: lead 11 / bass 12 / organ 16; drums Ch13·Keys (36/38/42/46) ⇄ Ch1–4·Split (GM keys) — toggle at download; NO program changes (templates pre-select by channel); nothing beyond notes + tempo meta (audible BPM) + Type-1 track names; velocity 127; `ensemble_<bars>b_<root8>.mid`. Canonical §10 and mapped §6 per-block files unchanged — this is composition export, not protocol output |
 | UI glyphs: BMP only (Oct 6) | 𝅝/𝅗𝅥 (U+1D15x, astral plane) render as tofu in browsers/TUIs without music-font coverage — owner-confirmed. All duration dials now `1 · ½ · ♩ · ♪ · ♬` (BMP/Latin-1). Rule: keep UI strings below U+FFFF; emoji 💾 tolerated (color-font ubiquitous) |
 | Drum dials: practical-over-identical (Oct 6, BUILT v1.7.0) | Owner scope revision to the v1.3 ruling ("only what's built in"): expose EVERY practical constant even where it re-characterizes the voice — waveforms included ("it becomes basically a new instrument" is accepted). Not exposed: hat six-partial RATIOS (six dials impractical; `tune`/f0 is their musical equivalent) and the click's fixed 0.02 s micro-envelope. Defaults = old constants → fresh sessions byte-identical. ∿ modulation extended to drum paths (per-hit scalar sampling: every hit lands at a different point of the sine → auto-wah hats, tuning kick). Persistence stays tonebank-local (never URL), favorites + reset per drum voice free via the schema |
+| Patch round v1.7.1 (Nov 9, BUILT) — player bug fixes from a read-only audit | (1) Dead head-start part-entry removed — never called by any UI path, and its `anchor = entry` + `rep = floor(entry/loop)` double-counted the entry (a short block head-started past its own loop length would sit silent for extra loops). Anchored entry is the only policy now. (2) `addBlock` race guard — double-click / LIVE-poll-during-fetch could push the same block twice (dedupe check ran before the async derivation); now an in-flight root set + post-await re-check. (3) LIVE eviction re-indexes the tap-to-move `selected` block (indices shifted; a pending selection could move the wrong block). (4) `cycleLen` computes the true audible period (block loops + map extent for melodic parts + armed seq ribbons, muted skipped — same rule as `buildEnsembleParts`) instead of an 8-bar floor ignoring 16-bar map/seq; the mode button label shows the computed cycle. Protocol/fixtures untouched — verify.mjs 98/98 |
 | Mods don't box the future (Oct 5, owner directive) | Every mod stored {rate, depth, lo, hi, phase}: lo/hi default to schema min/max and are honored by the math already — future min/max MARKERS plug in by writing lo/hi, zero format/code change. Drum params can join by gaining a `modTarget` field; the engine LFO service is param-name-agnostic |
 | Mods = sound layer → tonebank-local (Oct 5) | Follows the established sound-settings ruling: persisted in `m2m-tones-v1` with favorites (favorites capture mods too — "use" restores tone+oscillations together); NOT session URL, downloads canonical. Trigger signature grew an OPTIONAL 7th arg (modCtx) — backwards compatible; unmodulated voices pay nothing (no osc spawned) |
 | localStorage keys had stray “…” glyphs since creation (Oct 5, fixed in v1.5.0) | `m2m-ton…s-v1`, `m2m-rhyth…n-v1`, `m2m…s-v1` — copy-paste-corrupted constants (grep truncation baked into source); worked only because readers/writers shared the same broken key. Corrected to documented ASCII (`m2m-tones-v1`/`m2m-session-v1`/`m2m-snapshots-v1`) with one-time silent migration from the legacy keys — existing browsers keep tone/favorites/snapshots/session. Lesson: byte-check string constants, don't trust truncated grep |
@@ -137,8 +140,8 @@ Three pillars:
       longest active part, no program changes; play-then-export-then-reload round trip.**
 - [x] Commit current build (live mode + snapshots + melody map + NOTES freeze +
       version bumps) — `0ed82ba` pushed Oct 1.
-- [ ] Confirm live Pages URL serves the v1.7.0 build (hard-refresh past cache;
-      header tag should read `player v1.7.0`).
+- [ ] Confirm live Pages URL serves the v1.7.1 build (hard-refresh past cache;
+      header tag should read `player v1.7.1`).
 - [ ] One real public session link shared as the canonical smoke target.
 
 ### Shipped (Oct 1) — awaiting only the browser pass above

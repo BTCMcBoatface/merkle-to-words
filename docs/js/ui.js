@@ -3,7 +3,7 @@
 // URL/localStorage; engine.js handles audio, placement, rotation mechanics.
 // Folded ♯ view and the keyboard window are view state, never data.
 
-import { derivePattern, PROTOCOL_ID, PROTOCOL_VERSION } from "./protocol.js";
+import { derivePattern, PROTOCOL_ID, PROTOCOL_VERSION, BAR_TICKS } from "./protocol.js";
 import { deriveMelody, noteName, CELL_TICKS, foldMidi, mapTicksFor } from "./notes.js";
 import { fetchTip, fetchByHeight } from "./api.js";
 import { downloadMidi, downloadMidiMapped, downloadEnsembleLoop, ENSEMBLE_MIDI_MAP } from "./smf.js";
@@ -99,13 +99,19 @@ function view() {
 function persist() { session.save(view()); }
 
 // ── block acquisition (on-request; LIVE poll uses this too) ──
+const deriving = new Set(); // roots with a derivation in flight (double-click/LIVE-poll guard)
 async function addBlock({ height, merkleRoot }) {
   const existing = findBlock(merkleRoot);
   if (existing) return existing;
+  if (deriving.has(merkleRoot)) return null; // same root already deriving — that call reports
   if (blocks.length >= MAX_BLOCKS) { setStatus(`collection full (${MAX_BLOCKS} max) — remove a block first`, true); return null; }
+  deriving.add(merkleRoot);
   busy = true; setStatus("deriving pattern…"); render();
   try {
     const pattern = await derivePattern(merkleRoot);
+    const raced = findBlock(merkleRoot); // re-check after the await: another
+    if (raced) return raced;             // fetch path may have finished first
+    if (blocks.length >= MAX_BLOCKS) { setStatus(`collection full (${MAX_BLOCKS} max) — remove a block first`, true); return null; }
     const b = { height, rootHex: merkleRoot, pattern };
     try { const mel = await deriveMelody(merkleRoot); b.melody = mel.melody32; b.scale = mel.scale; }
     catch (e) { /* melodic layer optional */ }
@@ -117,6 +123,7 @@ async function addBlock({ height, merkleRoot }) {
     setStatus(String(e.message || e), true);
     return null;
   } finally {
+    deriving.delete(merkleRoot);
     busy = false;
   }
 }
@@ -141,7 +148,7 @@ function shelfOnly(b) {
 // slotIdx < 0 = send to shelf. Destination slot occupied? setSlot overwrite IS the
 // evict-to-shelf ruling: the displaced block simply loses its slot, stays in the
 // collection, appears on the shelf.
-function placeBlock(block, slotIdx, { headStart = false } = {}) {
+function placeBlock(block, slotIdx) {
   disarmLive();
   const prev = slotIndexOf(block);
   if (slotIdx < 0) {
@@ -151,7 +158,7 @@ function placeBlock(block, slotIdx, { headStart = false } = {}) {
     return;
   }
   if (prev >= 0 && prev !== slotIdx) engine.clearSlot(prev);
-  engine.setSlot(slotIdx, block, { headStart });
+  engine.setSlot(slotIdx, block);
   selected = null;
   persist(); render();
 }
@@ -192,6 +199,13 @@ async function liveTick() {
       const oi = slotIndexOf(old);
       if (oi >= 0) engine.clearSlot(oi);
       blocks = blocks.slice(1);
+      // everything after the evicted block shifted down one index — keep the
+      // tap-to-move selection pointing at the SAME block (or drop it if that
+      // block was the one evicted)
+      if (selected && selected.kind === "block") {
+        if (selected.idx === 0) selected = null;
+        else selected.idx -= 1;
+      }
     }
     engine.rotateOneStep();
     const b = await addBlock(tip);
@@ -1132,7 +1146,7 @@ function render() {
 
   $("#blockCount").textContent = `${blocks.length}/${MAX_BLOCKS}`;
   playBtn.textContent = engine.playing ? "■ stop" : "▶ play";
-  modeBtn.textContent = engine.mode === "master" ? "8-bar cycle" : "bars";
+  modeBtn.textContent = engine.mode === "master" ? `${engine.cycleLen / BAR_TICKS}-bar cycle` : "bars";
   playBtn.disabled = busy;
   liveBtn.classList.toggle("on", engine.live);
   srcBtn.textContent = engine.melodySource === "merkle" ? "source: merkle" : "source: voice";
